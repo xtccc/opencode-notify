@@ -4,7 +4,7 @@
 
 原 `ai-cli-complete-notify`（Node.js）是一个覆盖 Claude / Codex / Gemini / OpenCode 的多通道任务完成通知系统。本次使用 Go 重写，聚焦最小可用范围：
 
-- **唯一集成对象**：OpenCode（通过生成 opencode 插件 JS 监听 `session.idle` / `session.error` / `session.status` 事件）
+- **唯一集成对象**：OpenCode（通过生成 opencode 插件 JS 监听 `session.idle` / `session.error` / `session.status` / `question.asked` 事件）
 - **通知通道**：Gotify（自托管推送）+ Sound（调用系统声音 CLI 播报）
 - **平台**：Linux 优先（跨平台保留扩展点，但不实现 Windows/macOS 专用逻辑）
 - **配置**：全新 JSON 格式（不复用旧 settings.json / .env），命名空间独立
@@ -19,15 +19,15 @@
 
 ```
 opencode (Bun 运行时)
-  └── ~/.config/opencode/plugins/opencode-notify.js   ← Go 生成/安装的插件
-        │  监听 session.idle / session.error / session.status(idle)
+└── ~/.config/opencode/plugins/opencode-notify.js   ← Go 生成/安装的插件
+        │  监听 session.idle / session.error / session.status(idle) / question.asked
         │  1.5s 内去重（event::session_id::error）
         │  Bun.spawn( 绝对路径/opencode-notify notify --source opencode --from-hook --force )
         │  stdin ──────────────────▶ JSON payload（见 §6）
         ▼
   opencode-notify (Go 静态二进制)
         ├── 读取 stdin JSON（1.5s 超时，非阻塞）
-        ├── 解析 hook 上下文 → kind(complete|error) / task_info
+        ├── 解析 hook 上下文 → kind(complete|error|question) / task_info
         ├── 加载配置 ~/.config/opencode-notify/settings.json
         ├── 去重（可选，内容指纹 + 时间窗）
         ├── POST Gotify /message            ← 通道 1：gotify（§8）
@@ -81,7 +81,7 @@ opencode (Bun 运行时)
     "url": "https://gotify.example.com",
     "appToken": "",
     "timeoutMs": 10000,
-    "priority": { "complete": 5, "error": 10 }
+    "priority": { "complete": 5, "error": 10, "question": 6 }
   },
   "opencode": {
     "enabled": true,
@@ -129,9 +129,9 @@ opencode (Bun 运行时)
 - 顶部标记 `// opencode-notify:plugin`（供 uninstall 识别）
 - 内嵌 `NOTIFY_CMD`：`["<opencode-notify绝对路径>", "notify", "--source", "opencode", "--from-hook", "--force"]`；支持 `OPENCODE_NOTIFY_BIN` 环境变量覆盖二进制路径
 - 导出 `OpenCodeNotifyPlugin = async ({ client, project, directory, worktree }) => ({ event: ... })`
-- `isCompletionEvent`：`session.idle` / `session.error` / `session.status` 且 `status.type==='idle'`
+- `isCompletionEvent`：`session.idle` / `session.error` / `session.status` 且 `status.type==='idle'` / `question.asked` / `question.v2.asked`
 - 事件去重：`eventName::session_id::error_message`，1.5s 窗口
-- **payload 构建**：idle 时调用 `client.session.messages({path:{id}}) ` 尽力拉取最后一条 assistant 文本（失败降级为空，不影响通知）；error 直接取 `error_message`
+- **payload 构建**：idle 时调用 `client.session.messages({path:{id}}) ` 尽力拉取最后一条 assistant 文本（失败降级为空，不影响通知）；error 直接取 `error_message`；question 事件取 `properties.questions[0].question`，`task_info = "OpenCode 需要你回答: <问题>"`
 - `Bun.spawn` 写入 stdin JSON，`stdout/stderr: 'ignore'`，不阻塞 opencode
 
 **stdin JSON 契约（payload）**：
@@ -139,19 +139,21 @@ opencode (Bun 运行时)
 ```jsonc
 {
   "hook_source": "opencode-plugin",
-  "hook_event_name": "session.idle",     // session.idle | session.error | session.status
+  "hook_event_name": "session.idle",     // session.idle | session.error | session.status | question.asked | question.v2.asked
   "cwd": "/path/to/project",
   "task_info": "OpenCode 完成",
   "session_id": "sess_xxx",
   "project_name": "my-project",
   "error_message": "",
   "assistant_message": "最后一条助手回复...",
-  "output_content": "最后一条助手回复..."
+  "question_text": "需要你回答的问题文本（question 事件时）",
+  "output_content": "最后一条助手回复...（question 事件时为问题文本）"
 }
 ```
 
 **Go 侧 hookcontext 解析规则**：
 - `hook_event_name == "session.error"` → `kind=error`，`task_info = "OpenCode 失败: <error_message 截断 88 字符>"`
+- `hook_event_name == "question.asked" / "question.v2.asked"` → `kind=question`，`task_info = "OpenCode 需要你回答[: <问题 截断 88 字符>]"`
 - `session.idle` / `session.status` → `kind=complete`，`task_info = "OpenCode 完成"`（`--task` 显式传入则优先）
 - 其他/空 event → 跳过（`skipped`）
 
@@ -162,7 +164,7 @@ opencode (Bun 运行时)
 3. 阈值过滤：`minDurationMinutes > 0` 且 `!force` 且耗时不足 → skipped
 4. 计算 `cwd`（payload.cwd 优先）、`projectName`（cwd 目录名）、`durationText`
 5. 可选去重：内容指纹（`source::cwd::task_info` 规范化）写入 `state.json`，时间窗内重复 → skipped
-6. 构建 Gotify 消息：title `[OpenCode] {project}` + error 后缀；body 含 `Completed at/Failed at + 时间 + Duration + Source`
+6. 构建 Gotify 消息：title `[OpenCode] {project}` + error/question 后缀；body 含 `Completed at/Failed at/Awaiting user input at + 时间 + Duration + Source`
 6b. 若 `sound.enabled` → `internal/sound`（与 gotify 并行 `errgroup`），结果 `{channel:'sound', ...}` 并入 results
 7. stdout 输出 `{skipped:false, results:[{channel:'gotify',...},{channel:'sound',...}]}`
 
@@ -170,7 +172,7 @@ opencode (Bun 运行时)
 
 - 端点：`POST {url}/message`，body `{"title","message","priority"}`
 - 鉴权：header `X-Gotify-Key: <appToken>`（若 url 自带 `token=` query 则兼容并存）
-- priority：error=10 / complete=5（可配置）
+- priority：error=10 / complete=5 / question=6（可配置）
 - 错误处理：非 2xx 或 JSON 解析失败 → `{ok:false, error}`；错误信息脱敏（URL、token 打码）
 - 实现只用 `net/http`，无第三方依赖
 

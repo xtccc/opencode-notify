@@ -115,6 +115,42 @@ func TestNotifyFromHookComplete(t *testing.T) {
 	}
 }
 
+func TestNotifyHookQuestion(t *testing.T) {
+	setupTestEnv(t)
+	rec := newGotifyRecorder(t)
+	writeConfig(t, rec.server.URL, true)
+
+	payload := `{"hook_source":"opencode-plugin","hook_event_name":"question.asked","cwd":"/app","session_id":"s-q1","question_text":"继续部署吗?","output_content":"继续部署吗?"}`
+	opts := Options{Source: "opencode", FromHook: true, Stdin: strings.NewReader(payload)}
+
+	out := Run(context.Background(), opts)
+	if out.Skipped {
+		t.Fatalf("should not skip: %+v", out)
+	}
+	if out.Kind != "question" {
+		t.Errorf("kind = %q, want question", out.Kind)
+	}
+	if !strings.Contains(out.TaskInfo, "继续部署吗?") {
+		t.Errorf("taskInfo = %q", out.TaskInfo)
+	}
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.requests) != 1 {
+		t.Fatalf("gotify requests = %d", len(rec.requests))
+	}
+	req := rec.requests[0]
+	if req.Priority != 6 {
+		t.Errorf("question priority = %d, want 6", req.Priority)
+	}
+	if !strings.Contains(req.Title, "需要你回答") {
+		t.Errorf("title = %q", req.Title)
+	}
+	if !strings.Contains(req.Message, "Awaiting user input at") {
+		t.Errorf("message = %q", req.Message)
+	}
+}
+
 func TestNotifyHookError(t *testing.T) {
 	setupTestEnv(t)
 	rec := newGotifyRecorder(t)

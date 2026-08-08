@@ -45,6 +45,19 @@ function getErrorMessage(event) {
   );
 }
 
+function getQuestionText(event) {
+  if (typeof event !== 'object' || event === null) return '';
+  const props = typeof event.properties === 'object' && event.properties !== null ? event.properties : {};
+  const questions = Array.isArray(props.questions) ? props.questions : [];
+  for (const item of questions) {
+    if (typeof item !== 'object' || item === null) continue;
+    const text = firstString(item.question, item.header, item.text);
+    if (text) return text;
+  }
+  // Fallback for event shapes that carry the question directly.
+  return firstString(props.question, props.text, props.content);
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -150,10 +163,17 @@ function isSessionIdleStatus(event) {
   return status && typeof status === 'object' && status.type === 'idle';
 }
 
+const QUESTION_EVENT_TYPES = new Set(['question.asked', 'question.v2.asked']);
+
+function isQuestionEvent(event) {
+  return QUESTION_EVENT_TYPES.has(getEventType(event));
+}
+
 function isCompletionEvent(event) {
   const type = getEventType(event);
   if (type === 'session.idle') return true;
   if (type === 'session.error') return true;
+  if (isQuestionEvent(event)) return true;
   return isSessionIdleStatus(event);
 }
 
@@ -169,9 +189,22 @@ async function buildPayload(event, context, client) {
   const eventType = getEventType(event);
   const errorMessage = getErrorMessage(event);
   const sessionId = getSessionId(event);
-  const assistantText = eventType === 'session.idle' || isSessionIdleStatus(event)
+  const questionText = isQuestionEvent(event) ? getQuestionText(event) : '';
+  const assistantText = (eventType === 'session.idle' || isSessionIdleStatus(event)) && !questionText
     ? await fetchLatestAssistantText(client, sessionId)
     : '';
+  let taskInfo;
+  let outputContent;
+  if (eventType === 'session.error') {
+    taskInfo = errorMessage ? `OpenCode 失败: ${errorMessage}` : 'OpenCode 失败';
+    outputContent = errorMessage;
+  } else if (questionText) {
+    taskInfo = truncateAssistantText(`OpenCode 需要你回答: ${questionText}`, 50);
+    outputContent = questionText;
+  } else {
+    taskInfo = truncateAssistantText(assistantText, 40) || 'OpenCode 完成';
+    outputContent = assistantText;
+  }
   return {
     hook_source: 'opencode-plugin',
     hook_event_name: eventType,
@@ -181,14 +214,13 @@ async function buildPayload(event, context, client) {
       context.worktree,
       context.directory,
     ),
-    task_info: eventType === 'session.error'
-      ? (errorMessage ? `OpenCode 失败: ${errorMessage}` : 'OpenCode 失败')
-      : truncateAssistantText(assistantText, 40) || 'OpenCode 完成',
+    task_info: taskInfo,
     session_id: sessionId,
     error_message: errorMessage,
     project_name: firstString(context.project && context.project.name),
     assistant_message: assistantText,
-    output_content: eventType === 'session.error' ? errorMessage : assistantText,
+    question_text: questionText,
+    output_content: outputContent,
   };
 }
 

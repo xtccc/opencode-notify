@@ -15,11 +15,12 @@ const CurrentVersion = 1
 type PriorityMap struct {
 	Complete int `json:"complete"`
 	Error    int `json:"error"`
+	Question int `json:"question"`
 }
 
 // DefaultPriority returns the built-in priority map.
 func DefaultPriority() PriorityMap {
-	return PriorityMap{Complete: 5, Error: 10}
+	return PriorityMap{Complete: 5, Error: 10, Question: 6}
 }
 
 // GotifyConfig holds the Gotify channel settings.
@@ -135,6 +136,9 @@ func (c *Config) normalize(present map[string]struct{}) {
 	}
 	if c.Gotify.Priority.Error <= 0 {
 		c.Gotify.Priority.Error = d.Gotify.Priority.Error
+	}
+	if c.Gotify.Priority.Question <= 0 {
+		c.Gotify.Priority.Question = d.Gotify.Priority.Question
 	}
 	if _, ok := present["opencode"]; !ok {
 		c.OpenCode = d.OpenCode

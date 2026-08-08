@@ -6,7 +6,7 @@ OpenCode 任务完成通知桥（Go 实现）。
 
 ## 特性
 
-- **监听 OpenCode 完成事件**：`session.idle` / `session.error` / `session.status(idle)`，通过生成 opencode 插件 JS（Bun 生态）实现
+- **监听 OpenCode 完成事件**：`session.idle` / `session.error` / `session.status(idle)` / `question.asked`（助手提问等待回答），通过生成 opencode 插件 JS（Bun 生态）实现
 - **Gotify 推送**：成功/失败不同优先级（默认 5 / 10），标题带项目名
 - **声音播报**：自动探测系统 CLI（espeak-ng / paplay / aplay / canberra-gtk-play 等），支持 TTS、播放音频文件、beep 回退
 - **去重**：内容指纹 + 时间窗（默认 5 分钟），避免重复推送
@@ -46,6 +46,7 @@ opencode-notify config   # 打印当前生效配置（token 脱敏）
 | `gotify.timeoutMs` | int | 10000 | HTTP 超时 |
 | `gotify.priority.complete` | int | 5 | 成功通知优先级 |
 | `gotify.priority.error` | int | 10 | 失败通知优先级 |
+| `gotify.priority.question` | int | 6 | 助手提问等待回答时的通知优先级 |
 | `opencode.enabled` | bool | true | 总开关 |
 | `opencode.minDurationMinutes` | int | 0 | 耗时低于该分钟数的成功任务不通知（0=关闭） |
 | `sound.enabled` | bool | true | 声音通道开关 |
@@ -113,14 +114,14 @@ opencode-notify help
 ```
 opencode (Bun 运行时)
   └── ~/.config/opencode/plugins/opencode-notify.js  ← Go 生成/安装
-        │  监听 session.idle / session.error / session.status(idle)
+        │  监听 session.idle / session.error / session.status(idle) / question.asked
         │  1.5s 窗口内事件去重
         │  Bun.spawn( <二进制> notify --source opencode --from-hook --force )
         │  stdin ─────▶ JSON payload {hook_event_name, cwd, task_info, ...}
         ▼
   opencode-notify (Go)
         ├── 读取 stdin JSON（1.5s 超时，非阻塞）
-        ├── 解析事件 → kind(complete|error) / task_info
+        ├── 解析事件 → kind(complete|error|question) / task_info
         ├── 加载配置 → 总开关 / 耗时阈值 / 去重检查
         ├── POST Gotify /message   （通道 1）
         └── 调用声音 CLI 播报       （通道 2，与 gotify 并行）

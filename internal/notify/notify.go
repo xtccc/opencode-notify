@@ -176,9 +176,12 @@ func detectCwd() string {
 
 func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, project string) string {
 	var sb strings.Builder
-	if kind == hookcontext.KindError {
+	switch kind {
+	case hookcontext.KindError:
 		sb.WriteString("Failed at: " + format.Timestamp(time.Now()))
-	} else {
+	case hookcontext.KindQuestion:
+		sb.WriteString("Awaiting user input at: " + format.Timestamp(time.Now()))
+	default:
 		sb.WriteString("Completed at: " + format.Timestamp(time.Now()))
 	}
 	if d := format.FormatDurationMs(durationMs); d != "" {
@@ -203,8 +206,11 @@ func dispatch(ctx context.Context, cfg config.Config, opts Options, decision *ho
 		go func() {
 			defer wg.Done()
 			kind := gotify.KindComplete
-			if decision.Kind == hookcontext.KindError {
+			switch decision.Kind {
+			case hookcontext.KindError:
 				kind = gotify.KindError
+			case hookcontext.KindQuestion:
+				kind = gotify.KindQuestion
 			}
 			res := gotify.Send(ctx, cfg.Gotify, title, message, kind)
 			mu.Lock()

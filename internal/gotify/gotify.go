@@ -22,6 +22,7 @@ type Kind string
 const (
 	KindComplete Kind = "complete"
 	KindError    Kind = "error"
+	KindQuestion Kind = "question"
 )
 
 // Result is the outcome of one gotify request.
@@ -58,8 +59,11 @@ func Send(ctx context.Context, cfg config.GotifyConfig, title, message string, k
 	base.Path = strings.TrimRight(base.Path, "/") + "/message"
 
 	priority := cfg.Priority.Complete
-	if kind == KindError {
+	switch kind {
+	case KindError:
 		priority = cfg.Priority.Error
+	case KindQuestion:
+		priority = cfg.Priority.Question
 	}
 	body, err := json.Marshal(messagePayload{Title: title, Message: message, Priority: priority})
 	if err != nil {

@@ -36,6 +36,29 @@ func TestBuild(t *testing.T) {
 			wantKind: KindComplete, wantTask: "OpenCode 完成",
 		},
 		{
+			name: "question asked",
+			payload: &HookPayload{
+				HookSource: "opencode-plugin", HookEventName: "question.asked", Cwd: "/s",
+				QuestionText: "继续部署吗?", OutputContent: "继续部署吗?",
+			},
+			wantKind: KindQuestion, wantTask: "OpenCode 需要你回答: 继续部署吗?",
+		},
+		{
+			name: "question v2 asked",
+			payload: &HookPayload{
+				HookSource: "opencode-plugin", HookEventName: "question.v2.asked", Cwd: "/s",
+				OutputContent: "继续部署吗?",
+			},
+			wantKind: KindQuestion, wantTask: "OpenCode 需要你回答: 继续部署吗?",
+		},
+		{
+			name: "question without text",
+			payload: &HookPayload{
+				HookSource: "opencode-plugin", HookEventName: "question.asked", Cwd: "/s",
+			},
+			wantKind: KindQuestion, wantTask: "OpenCode 需要你回答",
+		},
+		{
 			name:    "unknown event skipped",
 			payload: &HookPayload{HookSource: "opencode-plugin", HookEventName: "session.started", Cwd: "/s"},
 			skip:    true,

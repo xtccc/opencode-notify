@@ -6,7 +6,8 @@
     "timeoutMs": 10000,
     "priority": {
       "complete": 5,
-      "error": 10
+      "error": 10,
+      "question": 6
     }
   },
   "opencode": {

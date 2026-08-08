@@ -15,13 +15,16 @@ type Kind string
 const (
 	KindComplete Kind = "complete"
 	KindError    Kind = "error"
+	KindQuestion Kind = "question"
 )
 
 // Known event names emitted by the opencode plugin.
 const (
-	EventSessionIdle   = "session.idle"
-	EventSessionError  = "session.error"
-	EventSessionStatus = "session.status"
+	EventSessionIdle      = "session.idle"
+	EventSessionError     = "session.error"
+	EventSessionStatus    = "session.status"
+	EventQuestionAsked    = "question.asked"
+	EventQuestionV2Asked  = "question.v2.asked"
 )
 
 // HookPayload is the JSON contract piped from the opencode plugin.
@@ -35,6 +38,7 @@ type HookPayload struct {
 	ErrorMessage     string `json:"error_message"`
 	AssistantMessage string `json:"assistant_message"`
 	OutputContent    string `json:"output_content"`
+	QuestionText     string `json:"question_text"`
 }
 
 // Decision is the result of parsing a payload: either a notification to
@@ -115,6 +119,22 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 			Cwd:         payload.Cwd,
 			ProjectName: payload.ProjectName,
 			Signature:   output,
+		}, nil
+	}
+
+	if eventName == EventQuestionAsked || eventName == EventQuestionV2Asked {
+		question := truncate(firstNonEmpty(payload.QuestionText, output), 88)
+		task := "OpenCode 需要你回答"
+		if question != "" {
+			task += ": " + question
+		}
+		return &Decision{
+			Kind:        KindQuestion,
+			TaskInfo:    explicitOrDefault(explicitTaskInfo, task),
+			OutputText:  firstNonEmpty(payload.QuestionText, output),
+			Cwd:         payload.Cwd,
+			ProjectName: payload.ProjectName,
+			Signature:   firstNonEmpty(payload.QuestionText, output),
 		}, nil
 	}
 
