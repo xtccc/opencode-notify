@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "gotify": {
+    "url": "https://gotify.example.com",
+    "appToken": "",
+    "timeoutMs": 10000,
+    "priority": {
+      "complete": 5,
+      "error": 10
+    }
+  },
+  "opencode": {
+    "enabled": true,
+    "minDurationMinutes": 0
+  },
+  "sound": {
+    "enabled": true,
+    "tts": true,
+    "audioPath": "",
+    "staticText": "",
+    "fallbackBeep": true,
+    "overrideCommand": ""
+  },
+  "dedupe": {
+    "enabled": true,
+    "windowMinutes": 5
+  },
+  "ui": {
+    "language": "zh-CN"
+  }
+}
