@@ -20,11 +20,11 @@ const (
 
 // Known event names emitted by the opencode plugin.
 const (
-	EventSessionIdle      = "session.idle"
-	EventSessionError     = "session.error"
-	EventSessionStatus    = "session.status"
-	EventQuestionAsked    = "question.asked"
-	EventQuestionV2Asked  = "question.v2.asked"
+	EventSessionIdle     = "session.idle"
+	EventSessionError    = "session.error"
+	EventSessionStatus   = "session.status"
+	EventQuestionAsked   = "question.asked"
+	EventQuestionV2Asked = "question.v2.asked"
 )
 
 // HookPayload is the JSON contract piped from the opencode plugin.

@@ -232,6 +232,7 @@ func cmdConfig(rest []string) error {
 	}
 	redacted := cfg
 	redacted.Gotify.AppToken = maskToken(redacted.Gotify.AppToken)
+	redacted.Sound.MimoAPIKey = maskToken(redacted.Sound.MimoAPIKey)
 	return emitJSON(map[string]any{
 		"ok":     true,
 		"mode":   "config",

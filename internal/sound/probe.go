@@ -10,7 +10,6 @@ import (
 type Mode string
 
 const (
-	ModeTTS  Mode = "tts"
 	ModePlay Mode = "play" // play an audio file
 	ModeBeep Mode = "beep"
 )
@@ -18,16 +17,11 @@ const (
 // Provider describes one candidate in a fallback chain.
 type Provider struct {
 	Name string   // binary name, e.g. "paplay"
-	Args []string // template args, may contain {FILE} / {TEXT}
+	Args []string // template args, may contain {FILE}
 }
 
 // probeChains is the single source of truth for the fallback chains.
 var probeChains = map[Mode][]Provider{
-	ModeTTS: {
-		{Name: "espeak-ng", Args: []string{"{TEXT}"}},
-		{Name: "espeak", Args: []string{"{TEXT}"}},
-		{Name: "spd-say", Args: []string{"{TEXT}"}},
-	},
 	ModePlay: {
 		{Name: "paplay", Args: []string{"{FILE}"}},
 		{Name: "pw-play", Args: []string{"{FILE}"}},

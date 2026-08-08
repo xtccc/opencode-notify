@@ -75,27 +75,6 @@ func TestPlayAudioFileWithFakePlayer(t *testing.T) {
 	}
 }
 
-func TestPlayTTSUsesStaticText(t *testing.T) {
-	dir := t.TempDir()
-	record := filepath.Join(dir, "spoken")
-	script := "#!/bin/sh\nprintf '%s' \"$*\" > " + record + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "espeak"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir)
-	ResetCache()
-
-	cfg := config.SoundConfig{Enabled: true, TTS: true, StaticText: "任务完成", FallbackBeep: false}
-	res := Play(context.Background(), cfg, "ignored")
-	if !res.OK {
-		t.Fatalf("tts should succeed: %+v", res)
-	}
-	data, _ := os.ReadFile(record)
-	if string(data) != "任务完成" {
-		t.Errorf("spoken text = %q, want 任务完成", string(data))
-	}
-}
-
 func TestPlayNoToolNoBeep(t *testing.T) {
 	ResetCache()
 	dir := t.TempDir()
@@ -107,14 +86,5 @@ func TestPlayNoToolNoBeep(t *testing.T) {
 	}
 	if res.Error == "" {
 		t.Fatal("expected error message")
-	}
-}
-
-func TestExpandPlaceholders(t *testing.T) {
-	if got := expandTTS([]string{"{TEXT}"}, "hello world"); len(got) != 1 || got[0] != "hello world" {
-		t.Errorf("expandTTS = %v", got)
-	}
-	if got := expandFile([]string{"-nodisp", "{FILE}"}, "/tmp/a.wav"); got[1] != "/tmp/a.wav" {
-		t.Errorf("expandFile = %v", got)
 	}
 }

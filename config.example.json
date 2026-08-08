@@ -20,7 +20,9 @@
     "audioPath": "",
     "staticText": "",
     "fallbackBeep": true,
-    "overrideCommand": ""
+    "overrideCommand": "",
+    "mimoApiKey": "",
+    "ttsVoice": "Chloe"
   },
   "dedupe": {
     "enabled": true,

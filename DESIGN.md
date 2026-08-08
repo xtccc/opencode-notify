@@ -89,11 +89,13 @@ opencode (Bun 运行时)
   },
   "sound": {
     "enabled": true,
-    "tts": true,                // true=语音播报任务文本；false=beep 或播放自定义文件
+    "tts": true,                // true=小米 TTS 播报；false=beep 或播放自定义文件
+    "mimoApiKey": "",           // 小米 Mimo API key（也可用环境变量）
+    "ttsVoice": "Chloe",        // 小米音色
     "audioPath": "",            // 非 TTS 时优先播放自定义音频文件（wav/mp3/oga）
     "staticText": "",           // 有值时语音播报该固定文本，否则播报 task_info
     "fallbackBeep": true,       // TTS/播放失败时回退系统提示音
-    "overrideCommand": ""       // 可选：完全覆盖自动探测，支持 $FILE/$TEXT 占位符
+    "overrideCommand": ""       // 可选：完全覆盖自动逻辑，支持 $FILE/$TEXT 占位符
   },
   "dedupe": {
     "enabled": true,
@@ -103,8 +105,8 @@ opencode (Bun 运行时)
 }
 ```
 
-- 环境变量覆盖：`OPENCODE_NOTIFY_GOTIFY_URL`、`OPENCODE_NOTIFY_GOTIFY_TOKEN`、`OPENCODE_NOTIFY_CONFIG_DIR`。
-- `appToken` 只允许来自配置文件或环境变量，**绝不写入日志**（错误统一脱敏）。
+- 环境变量覆盖：`OPENCODE_NOTIFY_GOTIFY_URL`、`OPENCODE_NOTIFY_GOTIFY_TOKEN`、`OPENCODE_NOTIFY_MIMO_API_KEY`、`OPENCODE_NOTIFY_CONFIG_DIR`。
+- `appToken` / `mimoApiKey` 只允许来自配置文件或环境变量，**绝不写入日志**（错误统一脱敏，`config` 命令输出掩码）。
 
 ## 5. CLI 命令
 
@@ -184,18 +186,22 @@ opencode (Bun 运行时)
 
 ## 10. Sound 通道（internal/sound，Linux 原生）
 
-**自动探测回退链**（`probe.go`，首次调用时 `exec.LookPath` 探测并缓存）：
+**TTS（`tts=true`）走小米 Mimo 云语音**（`mimo.go`）：
+- `POST https://api.xiaomimimo.com/v1/chat/completions`，`model=mimo-v2.5-tts`，`audio.format=wav`，`audio.voice`（默认 Chloe）
+- key 从 `sound.mimoApiKey`（settings.json）或环境变量 `OPENCODE_NOTIFY_MIMO_API_KEY` 读取
+- 解析 `choices[0].message.audio.data`（base64 WAV）→ 解码 → 临时文件 → 本地播放链 → 清理
+- 失败（无 key / 网络 / 非 2xx / 解码失败 / 播放失败）→ `fallbackBeep` 回退 beep
+
+**播放链**（`probe.go`，首次调用时 `exec.LookPath` 探测并缓存）：
 
 | 场景 | 回退链 |
 |---|---|
-| TTS 语音 | `espeak-ng` → `espeak` → `spd-say`，参数 `espeak-ng "<text>"` |
-| 播放音频文件 | `paplay` → `pw-play` → `aplay` → `ffplay -nodisp -autoexit` → `mpv --no-terminal` |
+| 播放 WAV/音频文件 | `paplay` → `pw-play` → `aplay` → `ffplay -nodisp -autoexit` → `mpv --no-terminal` |
 | 纯 beep | `canberra-gtk-play -i bell` → 自由桌面 `bell.oga`(paplay) → 终端 `\a` |
 
-- **tts=true**：播报 `staticText` 或 `task_info`；播放进程 stdout/stderr 忽略；context 10s 超时；失败且 `fallbackBeep` → 回退 beep
 - **tts=false 且 `audioPath` 存在**：播放该文件；文件不存在或 CLI 缺失 → 回退 beep / `ok:false`
-- **overrideCommand 非空**：跳过探测，`$FILE` / `$TEXT` 占位符替换后直接执行（参数透传，不做 shell 拼接）
-- 无音频设备 / 容器环境返回 `{ok:false, error}`，不阻塞 gotify 通道
+- **overrideCommand 非空**：跳过自动逻辑，`$FILE` / `$TEXT` 占位符替换后直接执行（参数透传，不做 shell 拼接）
+- context 10s 超时；无音频设备 / 容器环境返回 `{ok:false, error}`，不阻塞 gotify 通道
 - 结果并入 notify 输出的 `results`：`{channel:'sound', ok, provider, error?}`
 
 ## 11. 测试计划
@@ -203,7 +209,7 @@ opencode (Bun 运行时)
 - `config`：默认值、环境覆盖、非法 JSON 降级、token 脱敏（单测）
 - `hookcontext`：三类事件映射、error 截断、未知事件 skip（表驱动单测）
 - `gotify`：`httptest` server 验证请求头/路径/body、非 2xx、超时、脱敏
-- `sound`：注入 fake exec，验证探测顺序、`$TEXT`/`$FILE` 展开、超时、`fallbackBeep`
+- `sound`：`httptest` 假 Mimo 服务端 + fake exec，验证请求体/解码/临时文件/播放/清理、失败兜底
 - `plugin`：模板渲染包含 `NOTIFY_CMD` 与 marker；`hook` install/uninstall/status 集成测试（TMPDIR 隔离的 fake 配置目录）
 - `notify`：端到端（fake gotify server + 管道喂 stdin payload）验证 JSON 输出
 - 命令：`go test ./...`；`go vet ./...`

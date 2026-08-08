@@ -8,7 +8,7 @@ OpenCode 任务完成通知桥（Go 实现）。
 
 - **监听 OpenCode 完成事件**：`session.idle` / `session.error` / `session.status(idle)` / `question.asked`（助手提问等待回答），通过生成 opencode 插件 JS（Bun 生态）实现
 - **Gotify 推送**：成功/失败不同优先级（默认 5 / 10），标题带项目名
-- **声音播报**：自动探测系统 CLI（espeak-ng / paplay / aplay / canberra-gtk-play 等），支持 TTS、播放音频文件、beep 回退
+- **声音播报**：TTS 走小米 Mimo 云语音（`mimo-v2.5-tts`），合成的 WAV 由本地播放链（paplay/pw-play/aplay 等）播放，失败回退系统提示音
 - **去重**：内容指纹 + 时间窗（默认 5 分钟），避免重复推送
 - **耗时阈值**：短任务不打扰（可配置）
 - **安全**：AppToken 只在配置文件/环境变量中，日志输出全程脱敏
@@ -50,7 +50,9 @@ opencode-notify config   # 打印当前生效配置（token 脱敏）
 | `opencode.enabled` | bool | true | 总开关 |
 | `opencode.minDurationMinutes` | int | 0 | 耗时低于该分钟数的成功任务不通知（0=关闭） |
 | `sound.enabled` | bool | true | 声音通道开关 |
-| `sound.tts` | bool | true | true=语音播报任务文本；false=beep 或播放自定义文件 |
+| `sound.tts` | bool | true | true=小米 TTS 语音播报任务文本；false=播放 `audioPath` 或 beep |
+| `sound.mimoApiKey` | string | "" | 小米 Mimo API key（必填；写在你本地 settings.json 或环境变量） |
+| `sound.ttsVoice` | string | "Chloe" | 小米 TTS 音色 |
 | `sound.audioPath` | string | "" | 非 TTS 时优先播放该音频文件（wav/mp3/oga） |
 | `sound.staticText` | string | "" | 有值时语音播报该固定文本，否则播报 task_info |
 | `sound.fallbackBeep` | bool | true | TTS/播放失败时回退系统提示音 |
@@ -64,6 +66,7 @@ opencode-notify config   # 打印当前生效配置（token 脱敏）
 ```bash
 export OPENCODE_NOTIFY_GOTIFY_URL="https://gotify.example.com"
 export OPENCODE_NOTIFY_GOTIFY_TOKEN="xxxxx"          # 或写入 settings.json
+export OPENCODE_NOTIFY_MIMO_API_KEY="xxxxx"          # 或写入 settings.json (sound.mimoApiKey)
 export OPENCODE_NOTIFY_CONFIG_DIR="/path/to/config"  # 自定义配置目录
 export OPENCODE_NOTIFY_STATE_DIR="/path/to/state"    # 自定义去重状态目录
 ```
@@ -124,17 +127,26 @@ opencode (Bun 运行时)
         ├── 解析事件 → kind(complete|error|question) / task_info
         ├── 加载配置 → 总开关 / 耗时阈值 / 去重检查
         ├── POST Gotify /message   （通道 1）
-        └── 调用声音 CLI 播报       （通道 2，与 gotify 并行）
+        └── 声音通道：小米 TTS → 临时 WAV → 本地播放链（通道 2，与 gotify 并行）
         └── stdout 输出 JSON 结果
 ```
 
-## 声音自动探测回退链
+## 声音通道
+
+**TTS（`sound.tts=true`）**：调用小米 Mimo API（`mimo-v2.5-tts`）合成中文语音，返回 WAV（base64）→ 写入临时文件 → 本地播放链播放 → 自动清理。
+
+- 需要 `sound.mimoApiKey`（写入 `~/.config/opencode-notify/settings.json` 或环境变量 `OPENCODE_NOTIFY_MIMO_API_KEY`；`opencode-notify config` 输出会脱敏）
+- 音色 `sound.ttsVoice`（默认 `Chloe`）；播报文本默认取 `task_info`，`sound.staticText` 可固定
+- 播放文件不采用 TTS 时改播 `sound.audioPath`
+
+**播放链（播放 TTS 结果 / 音频文件）**：
 
 | 场景 | 回退链 |
 |---|---|
-| TTS 语音 | `espeak-ng` → `espeak` → `spd-say` |
-| 播放音频文件 | `paplay` → `pw-play` → `aplay` → `ffplay` → `mpv` |
-| 纯 beep | `canberra-gtk-play -i bell` → freedesktop `bell.oga` → 终端 `\a` |
+| 播放 WAV/音频文件 | `paplay` → `pw-play` → `aplay` → `ffplay` → `mpv` |
+| 纯 beep 兜底 | `canberra-gtk-play -i bell` → freedesktop `bell.oga` → 终端 `\a` |
+
+`sound.overrideCommand` 完全覆盖自动逻辑（支持 `$FILE`/`$TEXT` 占位符）。
 
 无音频设备 / 容器环境返回 `{ok:false, error}`，不阻塞 Gotify 通道。
 
@@ -156,7 +168,7 @@ internal/plugin/       内嵌插件模板渲染（go:embed）
 internal/hookcontext/  stdin payload 解析 → 通知上下文
 internal/notify/       通知编排（配置→去重→通道并行分发）
 internal/gotify/       Gotify 客户端（POST /message）
-internal/sound/        声音通道（TTS / 播放文件 / beep + 探测）
+internal/sound/        声音通道（小米 TTS / 播放文件 / beep + 探测）
 internal/format/       时长/标题/时间格式化
 internal/state/        去重状态文件
 ```
@@ -173,7 +185,7 @@ A: 确认 `appToken` 正确。app token 只能推送，不能用它读取消息 
 A: 确认安装插件后**重启了 opencode**；确认 `status` 显示 `installed:true`；可用 `test` 命令验证通道本身正常。
 
 **Q: 声音没响**
-A: 运行 `opencode-notify test-sound` 看探测结果；无桌面音频环境（如容器）会失败但**不影响 Gotify 推送**。
+A: 运行 `opencode-notify test-sound` 看结果。常见原因：`sound.mimoApiKey` 未配置 / 网络不通 / 无桌面音频环境（如容器）。声音失败不阻塞 Gotify 推送。
 
 ## License
 

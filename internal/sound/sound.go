@@ -36,12 +36,8 @@ func Play(ctx context.Context, cfg config.SoundConfig, text string) Result {
 	}
 
 	if cfg.TTS {
-		program, args, ok := Resolve(ModeTTS)
-		if !ok {
-			return beep("tts", execCtx, cfg, "no TTS tool found")
-		}
 		sayText := firstNonEmpty(cfg.StaticText, text, "通知")
-		return runArgs(execCtx, program, expandTTS(args, sayText), "tts")
+		return mimoTTS(execCtx, cfg, sayText)
 	}
 
 	if file := strings.TrimSpace(cfg.AudioPath); file != "" {
@@ -115,15 +111,6 @@ func beep(failedMode string, ctx context.Context, cfg config.SoundConfig, reason
 		return res
 	}
 	return res
-}
-
-// expandTTS replaces the {TEXT} placeholder in TTS args with the text.
-func expandTTS(args []string, text string) []string {
-	out := make([]string, 0, len(args))
-	for _, a := range args {
-		out = append(out, strings.ReplaceAll(a, "{TEXT}", text))
-	}
-	return out
 }
 
 // expandFile replaces the {FILE} placeholder in player args with the path.

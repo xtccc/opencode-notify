@@ -25,6 +25,9 @@ func TestLoadDefaultsWhenMissing(t *testing.T) {
 	if cfg.Gotify.TimeoutMs != 10000 {
 		t.Errorf("timeout = %d", cfg.Gotify.TimeoutMs)
 	}
+	if cfg.Sound.TTSVoice != "Chloe" {
+		t.Errorf("ttsVoice default = %q", cfg.Sound.TTSVoice)
+	}
 }
 
 func TestLoadFromFileAndNormalize(t *testing.T) {
@@ -56,6 +59,34 @@ func TestLoadFromFileAndNormalize(t *testing.T) {
 	}
 	if loaded.Gotify.URL != "https://env.example.com" {
 		t.Errorf("env override url = %q", loaded.Gotify.URL)
+	}
+}
+
+func TestLoadMimoAPIKeyEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OPENCODE_NOTIFY_CONFIG_DIR", dir)
+	cfg := Default()
+	cfg.Sound.MimoAPIKey = "from-file"
+	if err := Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("OPENCODE_NOTIFY_MIMO_API_KEY", "from-env")
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Sound.MimoAPIKey != "from-env" {
+		t.Errorf("env mimo key should win, got %q", loaded.Sound.MimoAPIKey)
+	}
+
+	t.Setenv("OPENCODE_NOTIFY_MIMO_API_KEY", "")
+	loaded, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Sound.MimoAPIKey != "from-file" {
+		t.Errorf("file key should survive empty env, got %q", loaded.Sound.MimoAPIKey)
 	}
 }
 

@@ -23,52 +23,6 @@ func fakeBin(t *testing.T, dir, name string) string {
 	return path
 }
 
-func TestResolveHonorsPathOrder(t *testing.T) {
-	ResetCache()
-	dir := t.TempDir()
-	// Only espeak exists -> TTS resolves to espeak.
-	fakeBin(t, dir, "espeak")
-	t.Setenv("PATH", dir)
-
-	program, args, ok := Resolve(ModeTTS)
-	if !ok {
-		t.Fatal("expected TTS provider")
-	}
-	if program != "espeak" {
-		t.Errorf("program = %q, want espeak", program)
-	}
-	if len(args) != 1 || args[0] != "{TEXT}" {
-		t.Errorf("args = %v", args)
-	}
-}
-
-func TestResolvePrefersFirstInChain(t *testing.T) {
-	ResetCache()
-	dir := t.TempDir()
-	fakeBin(t, dir, "espeak-ng")
-	fakeBin(t, dir, "espeak")
-	t.Setenv("PATH", dir)
-
-	program, _, ok := Resolve(ModeTTS)
-	if !ok || program != "espeak-ng" {
-		t.Fatalf("expected espeak-ng, got %q ok=%v", program, ok)
-	}
-}
-
-func TestResolveNoneAvailable(t *testing.T) {
-	ResetCache()
-	dir := t.TempDir()
-	t.Setenv("PATH", dir) // empty PATH (no tools)
-
-	if _, _, ok := Resolve(ModeTTS); ok {
-		t.Fatal("expected no TTS provider")
-	}
-	// Second call uses cache and still reports none.
-	if _, _, ok := Resolve(ModeTTS); ok {
-		t.Fatal("cached result should also be none")
-	}
-}
-
 func TestResolvePlayChain(t *testing.T) {
 	ResetCache()
 	dir := t.TempDir()

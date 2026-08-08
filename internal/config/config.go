@@ -45,6 +45,8 @@ type SoundConfig struct {
 	StaticText      string `json:"staticText"`
 	FallbackBeep    bool   `json:"fallbackBeep"`
 	OverrideCommand string `json:"overrideCommand"`
+	MimoAPIKey      string `json:"mimoApiKey"`
+	TTSVoice        string `json:"ttsVoice"`
 }
 
 // DedupeConfig holds notification dedupe settings.
@@ -83,6 +85,7 @@ func Default() Config {
 			Enabled:      true,
 			TTS:          true,
 			FallbackBeep: true,
+			TTSVoice:     "Chloe",
 		},
 		Dedupe: DedupeConfig{
 			Enabled:       true,
@@ -148,6 +151,9 @@ func (c *Config) normalize(present map[string]struct{}) {
 	if _, ok := present["sound"]; !ok {
 		c.Sound = d.Sound
 	}
+	if strings.TrimSpace(c.Sound.TTSVoice) == "" {
+		c.Sound.TTSVoice = d.Sound.TTSVoice
+	}
 	if _, ok := present["dedupe"]; !ok {
 		c.Dedupe = d.Dedupe
 	} else if c.Dedupe.WindowMinutes <= 0 {
@@ -165,6 +171,9 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("OPENCODE_NOTIFY_GOTIFY_TOKEN"); strings.TrimSpace(v) != "" {
 		c.Gotify.AppToken = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("OPENCODE_NOTIFY_MIMO_API_KEY"); strings.TrimSpace(v) != "" {
+		c.Sound.MimoAPIKey = strings.TrimSpace(v)
 	}
 }
 
