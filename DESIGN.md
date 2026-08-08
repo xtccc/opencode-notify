@@ -40,7 +40,7 @@ opencode (Bun 运行时)
 ```
 /home/xtcc/opencode-notify/
 ├── go.mod / go.sum              # 零第三方依赖（仅标准库），go >= 1.21
-├── Makefile                     # build / test / vet / install
+├── build.sh                     # build / test / vet / install
 ├── README.md
 ├── cmd/opencode-notify/main.go  # 入口：参数解析 + 命令分发
 └── internal/
@@ -217,7 +217,7 @@ opencode (Bun 运行时)
 ## 12. 构建与发布
 
 - `CGO_ENABLED=0 go build -o opencode-notify ./cmd/opencode-notify` → 单一静态二进制
-- `make install` 安装到 `~/.local/bin`
+- `./build.sh install` 安装到 `~/.local/bin`
 - Linux 桌面依赖：无（Gotify 走 HTTP；声音走探测到的 CLI）
 
 ## 13. 关键决策记录
@@ -234,7 +234,7 @@ opencode (Bun 运行时)
 
 ## 14. 实施步骤
 
-1. 初始化 `go.mod`、目录骨架、Makefile
+1. 初始化 `go.mod`、目录骨架、build.sh
 2. `internal/config`（路径 + settings.json v1 + 环境覆盖）
 3. `internal/format` + `internal/hookcontext`（payload 解析与任务分类）
 4. `internal/gotify`（客户端 + 单测）

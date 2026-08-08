@@ -19,13 +19,13 @@ OpenCode 任务完成通知桥（Go 实现）。
 ### 1. 构建二进制
 
 ```bash
-go build -o opencode-notify ./cmd/opencode-notify   # 或 make build
+./build.sh build    # 构建二进制
 ```
 
 产物为单一静态二进制（`CGO_ENABLED=0`），可放到任意路径：
 
 ```bash
-make install          # 安装到 ~/.local/bin/opencode-notify
+./build.sh install   # 安装到 ~/.local/bin/opencode-notify
 ```
 
 ### 2. 配置
@@ -153,9 +153,9 @@ opencode (Bun 运行时)
 ## 开发
 
 ```bash
-make build     # 构建二进制
-make test      # go test ./...
-make vet       # go vet ./...
+./build.sh build    # 构建二进制
+./build.sh test     # go test ./...
+./build.sh vet      # go vet ./...
 ```
 
 目录结构：
