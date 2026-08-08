@@ -36,8 +36,9 @@ clean() {
 }
 
 case "${CMD}" in
-    build)     command ;;
-    test|vet)  "${CMD}" ;;
+    build)     build ;;
+    test)      test_cmd ;;
+    vet)       vet ;;
     install)   install_cmd ;;
     uninstall) uninstall ;;
     plugin)    plugin ;;

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"opencode-notify/internal/config"
@@ -33,6 +34,57 @@ type Store struct {
 	mu     sync.Mutex
 	path   string
 	recent []RecentNotification
+}
+
+// lockPath returns the dedicated lock file next to the state file. It is
+// never renamed, so flock on it stays valid across the atomic (rename
+// based) state rewrites of the state file itself.
+func lockPath() string {
+	return config.StatePath() + ".lock"
+}
+
+// acquireLock takes an exclusive flock on the lock file. The returned
+// release function unlocks and closes the file; flock is also released
+// automatically by the kernel if the process exits.
+func acquireLock() (release func(), err error) {
+	path := lockPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return func() {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+	}, nil
+}
+
+// CheckAndRemember atomically records a fingerprint under a cross-process
+// lock and reports whether an equivalent notification was already sent
+// within the window. It is safe when several processes (e.g. two plugin
+// hooks firing near-simultaneously) race on the same state file.
+func CheckAndRemember(fp string, windowMinutes int) (bool, error) {
+	if strings.TrimSpace(fp) == "" {
+		return false, nil
+	}
+
+	unlock, err := acquireLock()
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+
+	store, err := Load()
+	if err != nil {
+		return false, err
+	}
+	return store.checkAndRemember(fp, windowMinutes)
 }
 
 // Load opens (or creates empty) the state file.
@@ -69,13 +121,11 @@ func MakeFingerprint(source, cwd, text string) string {
 	return sourcePart + "::" + cwdPart + "::" + textPart
 }
 
-// CheckAndRemember returns true when an equivalent notification was already
+// checkAndRemember returns true when an equivalent notification was already
 // sent within the window. It always records the fingerprint (when not
-// duplicated), pruning entries older than the window.
-func (s *Store) CheckAndRemember(fingerprint string, windowMinutes int) (bool, error) {
-	if strings.TrimSpace(fingerprint) == "" {
-		return false, nil
-	}
+// duplicated), pruning entries older than the window. Callers must hold the
+// cross-process lock (CheckAndRemember) to make this race-free.
+func (s *Store) checkAndRemember(fp string, windowMinutes int) (bool, error) {
 	windowMs := int64(windowMinutes) * 60 * 1000
 	if windowMs < minWindow {
 		windowMs = minWindow
@@ -99,13 +149,13 @@ func (s *Store) CheckAndRemember(fingerprint string, windowMinutes int) (bool, e
 
 	duplicate := false
 	for _, e := range s.recent {
-		if e.Fingerprint == fingerprint {
+		if e.Fingerprint == fp {
 			duplicate = true
 			break
 		}
 	}
 	if !duplicate {
-		s.recent = append(s.recent, RecentNotification{Fingerprint: fingerprint, Timestamp: now})
+		s.recent = append(s.recent, RecentNotification{Fingerprint: fp, Timestamp: now})
 	}
 
 	if err := s.persistLocked(); err != nil {
@@ -124,6 +174,8 @@ func (s *Store) Reset() {
 	_ = s.persistLocked()
 }
 
+// persistLocked writes the store to disk via a temp file + atomic rename so
+// readers never observe a partially written state file.
 func (s *Store) persistLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
@@ -132,5 +184,23 @@ func (s *Store) persistLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, append(data, '\n'), 0o644)
+	dir := filepath.Dir(s.path)
+	tmp, err := os.CreateTemp(dir, ".state-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, s.path)
 }

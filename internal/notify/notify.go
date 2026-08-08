@@ -103,15 +103,12 @@ func Run(ctx context.Context, opts Options) Outcome {
 			sig = decision.TaskInfo
 		}
 		fp := state.MakeFingerprint(opts.Source, cwd, sig)
-		store, err := state.Load()
-		if err == nil {
-			dup, _ := store.CheckAndRemember(fp, cfg.Dedupe.WindowMinutes)
-			if dup {
-				return Outcome{
-					OK: true, Skipped: true, Mode: "notify", Source: opts.Source,
-					Kind: string(decision.Kind), Cwd: cwd, Project: project, TaskInfo: decision.TaskInfo,
-					Reason: "重复通知 (去重窗口内已发送过相同内容)",
-				}
+		dup, _ := state.CheckAndRemember(fp, cfg.Dedupe.WindowMinutes)
+		if dup {
+			return Outcome{
+				OK: true, Skipped: true, Mode: "notify", Source: opts.Source,
+				Kind: string(decision.Kind), Cwd: cwd, Project: project, TaskInfo: decision.TaskInfo,
+				Reason: "重复通知 (去重窗口内已发送过相同内容)",
 			}
 		}
 	}
