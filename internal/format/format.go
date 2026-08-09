@@ -43,6 +43,24 @@ func BuildTitle(projectName, taskInfo, sourceLabel string) string {
 	return "[" + sourceLabel + "] " + projectName + ": " + taskInfo
 }
 
+// TruncateSummary flattens a multi-line text into a single line and
+// truncates it to at most max runes. Empty input returns "".
+func TruncateSummary(text string, max int) string {
+	value := strings.Join(strings.Fields(text), " ")
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return string(runes)
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
+}
+
 // Timestamp returns a human readable local timestamp (Asia/Shanghai when
 // available, otherwise local time), matching the original zh-CN format.
 func Timestamp(now time.Time) string {

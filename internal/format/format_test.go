@@ -46,6 +46,29 @@ func TestSourceLabel(t *testing.T) {
 	}
 }
 
+func TestTruncateSummary(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		max  int
+		want string
+	}{
+		{"empty", "", 10, ""},
+		{"short unchanged", "hello", 10, "hello"},
+		{"multiline flattened", "a   b\n\nc\td", 10, "a b c d"},
+		{"truncated", "abcdefghij", 7, "abcd..."},
+		{"runes not bytes", "中文摘要内容", 4, "中..."},
+		{"max too small", "abcdef", 1, "a"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := TruncateSummary(tc.in, tc.max); got != tc.want {
+				t.Errorf("TruncateSummary(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTimestamp(t *testing.T) {
 	got := Timestamp(time.Unix(1_700_000_000, 0))
 	if !strings.Contains(got, ":") {

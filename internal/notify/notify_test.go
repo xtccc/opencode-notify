@@ -110,6 +110,21 @@ func TestNotifyFromHookComplete(t *testing.T) {
 	if !strings.Contains(req.Title, "[OpenCode]") {
 		t.Errorf("title = %q", req.Title)
 	}
+	if !strings.Contains(req.Title, "app") {
+		t.Errorf("title = %q", req.Title)
+	}
+	if !strings.Contains(req.Message, "目录: /work/app") {
+		t.Errorf("message missing 目录: %q", req.Message)
+	}
+	if !strings.Contains(req.Message, "任务: OpenCode 完成") {
+		t.Errorf("message missing 任务: %q", req.Message)
+	}
+	if !strings.Contains(req.Message, "结果: hello world") {
+		t.Errorf("message missing 结果: %q", req.Message)
+	}
+	if !strings.Contains(req.Message, "完成于:") {
+		t.Errorf("message missing 完成于: %q", req.Message)
+	}
 	if req.Priority != 5 {
 		t.Errorf("priority = %d", req.Priority)
 	}
@@ -146,8 +161,11 @@ func TestNotifyHookQuestion(t *testing.T) {
 	if !strings.Contains(req.Title, "需要你回答") {
 		t.Errorf("title = %q", req.Title)
 	}
-	if !strings.Contains(req.Message, "Awaiting user input at") {
+	if !strings.Contains(req.Message, "等待回答于:") {
 		t.Errorf("message = %q", req.Message)
+	}
+	if !strings.Contains(req.Message, "结果: 继续部署吗?") {
+		t.Errorf("message missing 结果: %q", req.Message)
 	}
 }
 

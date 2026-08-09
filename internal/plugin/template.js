@@ -129,6 +129,20 @@ function toMessageList(result) {
   return [];
 }
 
+async function fetchSessionDirectory(client, sessionId) {
+  if (!client || !client.session || typeof client.session.get !== 'function' || !sessionId) {
+    return '';
+  }
+  try {
+    const result = await client.session.get({ path: { id: sessionId } });
+    const session = result && result.data ? result.data : result;
+    return firstString(session && session.directory);
+  } catch (_error) {
+    // ignore
+  }
+  return '';
+}
+
 async function fetchLatestAssistantText(client, sessionId) {
   if (!client || !client.session || typeof client.session.messages !== 'function' || !sessionId) {
     return '';
@@ -190,9 +204,12 @@ async function buildPayload(event, context, client) {
   const errorMessage = getErrorMessage(event);
   const sessionId = getSessionId(event);
   const questionText = isQuestionEvent(event) ? getQuestionText(event) : '';
-  const assistantText = (eventType === 'session.idle' || isSessionIdleStatus(event)) && !questionText
-    ? await fetchLatestAssistantText(client, sessionId)
-    : '';
+  const [assistantText, sessionDir] = await Promise.all([
+    (eventType === 'session.idle' || isSessionIdleStatus(event)) && !questionText
+      ? fetchLatestAssistantText(client, sessionId)
+      : '',
+    fetchSessionDirectory(client, sessionId),
+  ]);
   let taskInfo;
   let outputContent;
   if (eventType === 'session.error') {
@@ -209,6 +226,7 @@ async function buildPayload(event, context, client) {
     hook_source: 'opencode-plugin',
     hook_event_name: eventType,
     cwd: firstString(
+      sessionDir,
       event && event.cwd,
       event && event.directory,
       context.worktree,

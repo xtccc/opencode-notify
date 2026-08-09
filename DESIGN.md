@@ -166,7 +166,7 @@ opencode (Bun 运行时)
 3. 阈值过滤：`minDurationMinutes > 0` 且 `!force` 且耗时不足 → skipped
 4. 计算 `cwd`（payload.cwd 优先）、`projectName`（cwd 目录名）、`durationText`
 5. 可选去重：内容指纹（`source::cwd::task_info` 规范化）写入 `state.json`，时间窗内重复 → skipped
-6. 构建 Gotify 消息：title `[OpenCode] {project}` + error/question 后缀；body 含 `Completed at/Failed at/Awaiting user input at + 时间 + Duration + Source`
+6. 构建 Gotify 消息：title `[OpenCode] {project}: {task_info}`；body 字段 `完成于/出错于/等待回答于 + 时间 + 目录(完整 cwd) + 任务 + 耗时 + 结果(输出摘要，多行压单行 ≤200 rune) + 来源`
 6b. 若 `sound.enabled` → `internal/sound`（与 gotify 并行 `errgroup`），结果 `{channel:'sound', ...}` 并入 results
 7. stdout 输出 `{skipped:false, results:[{channel:'gotify',...},{channel:'sound',...}]}`
 

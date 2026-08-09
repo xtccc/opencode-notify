@@ -115,7 +115,7 @@ func Run(ctx context.Context, opts Options) Outcome {
 
 	label := format.SourceLabel(opts.Source)
 	title := format.BuildTitle(project, decision.TaskInfo, label)
-	message := buildMessage(decision.Kind, opts.DurationMs, label, project)
+	message := buildMessage(decision.Kind, opts.DurationMs, label, cwd, decision.TaskInfo, decision.OutputText)
 
 	results := dispatch(ctx, cfg, opts, decision, title, message)
 	ok := anyOK(results)
@@ -171,23 +171,29 @@ func detectCwd() string {
 	return ""
 }
 
-func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, project string) string {
+func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, cwd, taskInfo, outputText string) string {
 	var sb strings.Builder
 	switch kind {
 	case hookcontext.KindError:
-		sb.WriteString("Failed at: " + format.Timestamp(time.Now()))
+		sb.WriteString("出错于: " + format.Timestamp(time.Now()))
 	case hookcontext.KindQuestion:
-		sb.WriteString("Awaiting user input at: " + format.Timestamp(time.Now()))
+		sb.WriteString("等待回答于: " + format.Timestamp(time.Now()))
 	default:
-		sb.WriteString("Completed at: " + format.Timestamp(time.Now()))
+		sb.WriteString("完成于: " + format.Timestamp(time.Now()))
+	}
+	if cwd != "" {
+		sb.WriteString("\n目录: " + cwd)
+	}
+	if taskInfo != "" {
+		sb.WriteString("\n任务: " + format.TruncateSummary(taskInfo, 120))
 	}
 	if d := format.FormatDurationMs(durationMs); d != "" {
-		sb.WriteString("\nDuration: " + d)
+		sb.WriteString("\n耗时: " + d)
 	}
-	sb.WriteString("\nSource: " + sourceLabel)
-	if project != "" {
-		sb.WriteString("\nProject: " + project)
+	if summary := format.TruncateSummary(outputText, 200); summary != "" {
+		sb.WriteString("\n结果: " + summary)
 	}
+	sb.WriteString("\n来源: " + sourceLabel)
 	return sb.String()
 }
 
