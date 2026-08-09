@@ -6,10 +6,11 @@ const NOTIFY_CMD_ENV = process.env.OPENCODE_NOTIFY_BIN;
 const NOTIFY_CMD = NOTIFY_CMD_ENV
   ? [NOTIFY_CMD_ENV, ...NOTIFY_CMD_BASE.slice(1)]
   : NOTIFY_CMD_BASE;
-const DEDUPE_MS = 1500;
-
-let lastEventKey = '';
-let lastEventAt = 0;
+// Per-session coalescing window: any burst of completion events (idle,
+// status-idle, error, question) for the same session inside this window is
+// collapsed into a single notification, preferring the most severe kind.
+const COALESCE_MS = 1500;
+const pendingBySession = new Map();
 
 function firstString(...values) {
   for (const value of values) {
@@ -242,15 +243,13 @@ async function buildPayload(event, context, client) {
   };
 }
 
-function shouldSkip(payload) {
-  const key = [payload.hook_event_name, payload.session_id, payload.error_message].join('::');
-  const now = Date.now();
-  if (key && key === lastEventKey && now - lastEventAt < DEDUPE_MS) {
-    return true;
-  }
-  lastEventKey = key;
-  lastEventAt = now;
-  return false;
+// eventPriority ranks notification kinds so that when several events for the
+// same session collide inside the coalescing window the most severe one wins:
+// error > question > complete.
+function eventPriority(event) {
+  if (getEventType(event) === 'session.error') return 3;
+  if (isQuestionEvent(event)) return 2;
+  return 1;
 }
 
 async function dispatchPayload(payload) {
@@ -272,14 +271,34 @@ async function dispatchPayload(payload) {
   }
 }
 
+// queueCoalesced merges bursts of completion events per session. Only one
+// notification is dispatched per session inside COALESCE_MS; the payload is
+// fully built (assistant text + session directory) at dispatch time so a
+// burst always reports the same final result and plays a single voice.
+function queueCoalesced(sessionKey, event, context, client) {
+  const priority = eventPriority(event);
+  const existing = pendingBySession.get(sessionKey);
+  if (existing && existing.priority >= priority) return;
+  if (existing) clearTimeout(existing.timer);
+
+  const timer = setTimeout(() => {
+    pendingBySession.delete(sessionKey);
+    void (async () => {
+      const payload = await buildPayload(event, context, client);
+      await dispatchPayload(payload);
+    })();
+  }, COALESCE_MS);
+
+  pendingBySession.set(sessionKey, { priority, timer });
+}
+
 export const OpenCodeNotifyPlugin = async ({ client, project, directory, worktree }) => {
   return {
     event: async ({ event }) => {
       if (!isCompletionEvent(event)) return;
 
-      const payload = await buildPayload(event, { project, directory, worktree }, client);
-      if (shouldSkip(payload)) return;
-      await dispatchPayload(payload);
+      const sessionKey = getSessionId(event) || 'global';
+      queueCoalesced(sessionKey, event, { project, directory, worktree }, client);
     },
   };
 };

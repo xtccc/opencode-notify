@@ -19,7 +19,9 @@ var templateSource string
 // absolute path to the opencode-notify binary ("" disables the baked
 // path, relying on OPENCODE_NOTIFY_BIN / PATH).
 func Render(exePath string) (string, error) {
-	cmd := []string{"notify", "--source", "opencode", "--from-hook", "--force"}
+	// No --force: plugin events must go through the normal dedupe/duration
+	// pipeline so near-simultaneous bursts stay single-send.
+	cmd := []string{"notify", "--source", "opencode", "--from-hook"}
 	if exePath != "" {
 		cmd = append([]string{exePath}, cmd...)
 	} else {

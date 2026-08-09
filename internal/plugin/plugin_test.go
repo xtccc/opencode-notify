@@ -30,6 +30,22 @@ func TestRenderBakesExecutable(t *testing.T) {
 		!strings.Contains(out, `"--from-hook"`) {
 		t.Error("notify argv incomplete")
 	}
+	if strings.Contains(out, `"--force"`) {
+		t.Error("plugin command must not disable dedupe with --force")
+	}
+}
+
+func TestRenderCoalescingPresent(t *testing.T) {
+	out, err := Render("/usr/local/bin/opencode-notify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "COALESCE_MS") {
+		t.Error("per-session coalescing constant missing from template")
+	}
+	if strings.Contains(out, "lastEventKey") {
+		t.Error("old exact-key dedupe code should have been removed")
+	}
 }
 
 func TestRenderDefaultFallback(t *testing.T) {

@@ -129,10 +129,10 @@ opencode (Bun 运行时)
 
 **插件模板**（`plugin/template.js`，由 Go 渲染）：
 - 顶部标记 `// opencode-notify:plugin`（供 uninstall 识别）
-- 内嵌 `NOTIFY_CMD`：`["<opencode-notify绝对路径>", "notify", "--source", "opencode", "--from-hook", "--force"]`；支持 `OPENCODE_NOTIFY_BIN` 环境变量覆盖二进制路径
+- 内嵌 `NOTIFY_CMD`：`["<opencode-notify绝对路径>", "notify", "--source", "opencode", "--from-hook"]`（不带 `--force`，让 Go 侧去重/阈值生效）；支持 `OPENCODE_NOTIFY_BIN` 环境变量覆盖二进制路径
 - 导出 `OpenCodeNotifyPlugin = async ({ client, project, directory, worktree }) => ({ event: ... })`
 - `isCompletionEvent`：`session.idle` / `session.error` / `session.status` 且 `status.type==='idle'` / `question.asked` / `question.v2.asked`
-- 事件去重：`eventName::session_id::error_message`，1.5s 窗口
+- **按 session 合并去重**：同一 session 在 `COALESCE_MS`(1.5s) 窗口内的多个事件合并为一次通知，优先级 error>question>complete（跨类型互斥）；payload 在定时器到点时构建，避免文本抓取竞态
 - **payload 构建**：idle 时调用 `client.session.messages({path:{id}}) ` 尽力拉取最后一条 assistant 文本（失败降级为空，不影响通知）；error 直接取 `error_message`；question 事件取 `properties.questions[0].question`，`task_info = "OpenCode 需要你回答: <问题>"`
 - `Bun.spawn` 写入 stdin JSON，`stdout/stderr: 'ignore'`，不阻塞 opencode
 
