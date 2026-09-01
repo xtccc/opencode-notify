@@ -182,18 +182,18 @@ func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, cwd, ta
 		sb.WriteString("完成于: " + format.Timestamp(time.Now()))
 	}
 	if cwd != "" {
-		sb.WriteString("\n目录: " + cwd)
+		sb.WriteString("\n\n目录: " + cwd)
 	}
 	if taskInfo != "" {
-		sb.WriteString("\n任务: " + format.TruncateSummary(taskInfo, 500))
+		sb.WriteString("\n\n任务: " + format.TruncateSummary(taskInfo, 500))
 	}
 	if d := format.FormatDurationMs(durationMs); d != "" {
-		sb.WriteString("\n耗时: " + d)
+		sb.WriteString("\n\n耗时: " + d)
 	}
 	if summary := format.TruncateSummary(outputText, 2000); summary != "" {
-		sb.WriteString("\n结果: " + summary)
+		sb.WriteString("\n\n结果: " + summary)
 	}
-	sb.WriteString("\n来源: " + sourceLabel)
+	sb.WriteString("\n\n来源: " + sourceLabel)
 	return sb.String()
 }
 
