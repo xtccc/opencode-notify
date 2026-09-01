@@ -2,7 +2,9 @@
 
 OpenCode 任务完成通知桥（Go 实现）。
 
-当 OpenCode 会话结束时（成功 / 失败），通过 [Gotify](https://gotify.net) 推送通知到手机/桌面，并在本机播报声音。原 `ai-cli-complete-notify`（Node.js）的 Go 重写版，零第三方依赖，单一静态二进制。
+当 OpenCode 会话结束时（成功 / 失败），通过 [Gotify](https://gotify.net) 推送通知到手机/桌面，并在本机播报声音。
+
+原 `ai-cli-complete-notify`（Node.js）的 Go 重写版，零第三方依赖，单一静态二进制。
 
 ## 特性
 
