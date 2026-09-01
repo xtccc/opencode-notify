@@ -61,6 +61,64 @@ func TruncateSummary(text string, max int) string {
 	return string(runes[:max-3]) + "..."
 }
 
+// SentenceBreakChinese inserts a single newline after each Chinese sentence
+// terminator "。"、"！"、"？" when not already followed by a newline.
+// Content inside fenced code blocks (```...```) and inline code (`...`) is
+// left untouched to avoid breaking markdown/code.
+func SentenceBreakChinese(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return text
+	}
+	parts := strings.Split(text, "```")
+	for i := range parts {
+		if i%2 == 0 {
+			parts[i] = breakChineseOutsideCode(parts[i])
+		}
+	}
+	res := strings.Join(parts, "```")
+	// Remove trailing newline added at overall end to avoid extra blank line before next section.
+	if strings.HasSuffix(res, "\n") && !strings.HasSuffix(text, "\n") {
+		res = strings.TrimSuffix(res, "\n")
+	}
+	return res
+}
+
+func breakChineseOutsideCode(s string) string {
+	// Protect inline code `...` by splitting on backtick.
+	inlineParts := strings.Split(s, "`")
+	for i := range inlineParts {
+		if i%2 == 0 {
+			inlineParts[i] = breakChinesePunct(inlineParts[i])
+		} else {
+			// keep inline code as-is, re-add backticks via Join
+		}
+	}
+	return strings.Join(inlineParts, "`")
+}
+
+func breakChinesePunct(s string) string {
+	// Insert "\n" after each Chinese terminator if not already followed by newline.
+	var b strings.Builder
+	runes := []rune(s)
+	for i, r := range runes {
+		b.WriteRune(r)
+		if r == '。' || r == '！' || r == '？' {
+			if i+1 < len(runes) {
+				next := runes[i+1]
+				if next == '\n' || next == '\r' {
+					continue
+				}
+			}
+			b.WriteRune('\n')
+		}
+	}
+	res := b.String()
+	res = strings.ReplaceAll(res, "。\n\n", "。\n")
+	res = strings.ReplaceAll(res, "！\n\n", "！\n")
+	res = strings.ReplaceAll(res, "？\n\n", "？\n")
+	return res
+}
+
 // Timestamp returns a human readable local timestamp (Asia/Shanghai when
 // available, otherwise local time), matching the original zh-CN format.
 func Timestamp(now time.Time) string {
