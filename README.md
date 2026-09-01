@@ -176,15 +176,19 @@ internal/state/        去重状态文件
 ## 常见问题
 
 **Q: `notify` 返回 `skipped:true, reason:"opencode 通知已禁用"`**
+
 A: 检查 `opencode.enabled` 是否为 `false`（注意：配置文件里缺失的 section 会回退默认值，不存在"零值导致禁用"的问题；`config` 命令可确认）。
 
 **Q: Gotify 推送 401**
+
 A: 确认 `appToken` 正确。app token 只能推送，不能用它读取消息 API（读取需 client token 或用户凭证）。
 
 **Q: 插件已安装但不触发**
+
 A: 确认安装插件后**重启了 opencode**；确认 `status` 显示 `installed:true`；可用 `test` 命令验证通道本身正常。
 
 **Q: 声音没响**
+
 A: 运行 `opencode-notify test-sound` 看结果。常见原因：`sound.mimoApiKey` 未配置 / 网络不通 / 无桌面音频环境（如容器）。声音失败不阻塞 Gotify 推送。
 
 ## License
