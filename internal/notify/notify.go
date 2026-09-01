@@ -186,14 +186,12 @@ func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, cwd, ta
 	}
 	if taskInfo != "" {
 		task := format.TruncateSummary(taskInfo, 500)
-		task = format.SentenceBreakChinese(task)
 		sb.WriteString("\n\n## 任务: " + task)
 	}
 	if d := format.FormatDurationMs(durationMs); d != "" {
 		sb.WriteString("\n\n耗时: " + d)
 	}
 	if summary := format.TruncateSummary(outputText, 2000); summary != "" {
-		summary = format.SentenceBreakChinese(summary)
 		sb.WriteString("\n\n## 结果:\n\n" + summary)
 	}
 	sb.WriteString("\n\n## 来源: " + sourceLabel)
