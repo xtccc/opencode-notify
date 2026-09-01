@@ -111,7 +111,7 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 
 	output := firstNonEmpty(payload.OutputContent, payload.AssistantMessage, payload.ErrorMessage)
 	if eventName == EventSessionError {
-		failure := truncate(firstNonEmpty(payload.ErrorMessage, output, "OpenCode task failed"), 200)
+		failure := strings.TrimSpace(firstNonEmpty(payload.ErrorMessage, output, "OpenCode task failed"))
 		return &Decision{
 			Kind:        KindError,
 			TaskInfo:    explicitOrDefault(explicitTaskInfo, "OpenCode 失败: "+failure),
@@ -123,7 +123,7 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 	}
 
 	if eventName == EventQuestionAsked || eventName == EventQuestionV2Asked {
-		question := truncate(firstNonEmpty(payload.QuestionText, output), 200)
+		question := strings.TrimSpace(firstNonEmpty(payload.QuestionText, output))
 		task := "OpenCode 需要你回答"
 		if question != "" {
 			task += ": " + question

@@ -104,8 +104,9 @@ func TestBuild(t *testing.T) {
 func TestBuildErrorTruncation(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	d, _ := Build(&HookPayload{HookSource: "opencode-plugin", HookEventName: "session.error", ErrorMessage: long}, "")
-	if len([]rune(d.TaskInfo)) > len([]rune("OpenCode 失败: "))+200 {
-		t.Errorf("task info not truncated: %d", len([]rune(d.TaskInfo)))
+	// No truncation expected after full removal
+	if len([]rune(d.TaskInfo)) != len([]rune("OpenCode 失败: "))+500 {
+		t.Errorf("task info should not be truncated: got %d want %d", len([]rune(d.TaskInfo)), len([]rune("OpenCode 失败: "))+500)
 	}
 }
 
