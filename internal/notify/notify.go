@@ -175,17 +175,19 @@ func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, cwd, ta
 	var sb strings.Builder
 	switch kind {
 	case hookcontext.KindError:
-		sb.WriteString("出错于: " + format.Timestamp(time.Now()))
+		sb.WriteString("## 出错于: " + format.Timestamp(time.Now()))
 	case hookcontext.KindQuestion:
-		sb.WriteString("等待回答于: " + format.Timestamp(time.Now()))
+		sb.WriteString("## 等待回答于: " + format.Timestamp(time.Now()))
 	default:
-		sb.WriteString("完成于: " + format.Timestamp(time.Now()))
+		sb.WriteString("## 完成于: " + format.Timestamp(time.Now()))
 	}
 	if cwd != "" {
-		sb.WriteString("\n\n目录: " + cwd)
+		sb.WriteString("\n\n## 目录: " + cwd)
 	}
 	if taskInfo != "" {
-		sb.WriteString("\n\n任务: " + format.TruncateSummary(taskInfo, 500))
+		task := format.TruncateSummary(taskInfo, 500)
+		task = format.SentenceBreakChinese(task)
+		sb.WriteString("\n\n## 任务: " + task)
 	}
 	if d := format.FormatDurationMs(durationMs); d != "" {
 		sb.WriteString("\n\n耗时: " + d)

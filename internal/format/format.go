@@ -61,8 +61,8 @@ func TruncateSummary(text string, max int) string {
 	return string(runes[:max-3]) + "..."
 }
 
-// SentenceBreakChinese inserts a single newline after each Chinese sentence
-// terminator "。"、"！"、"？" when not already followed by a newline.
+// SentenceBreakChinese inserts a double newline after each Chinese sentence
+// terminator "。"、"！"、"？" when not already followed by a double newline.
 // Content inside fenced code blocks (```...```) and inline code (`...`) is
 // left untouched to avoid breaking markdown/code.
 func SentenceBreakChinese(text string) string {
@@ -76,8 +76,13 @@ func SentenceBreakChinese(text string) string {
 		}
 	}
 	res := strings.Join(parts, "```")
-	// Remove trailing newline added at overall end to avoid extra blank line before next section.
-	if strings.HasSuffix(res, "\n") && !strings.HasSuffix(text, "\n") {
+	// Remove trailing double newline added at overall end to avoid extra blank line before next section.
+	if strings.HasSuffix(res, "\n\n") && !strings.HasSuffix(text, "\n\n") {
+		res = strings.TrimSuffix(res, "\n\n")
+		if strings.HasSuffix(res, "\n") && !strings.HasSuffix(text, "\n") {
+			res = strings.TrimSuffix(res, "\n")
+		}
+	} else if strings.HasSuffix(res, "\n") && !strings.HasSuffix(text, "\n") {
 		res = strings.TrimSuffix(res, "\n")
 	}
 	return res
@@ -97,25 +102,51 @@ func breakChineseOutsideCode(s string) string {
 }
 
 func breakChinesePunct(s string) string {
-	// Insert "\n" after each Chinese terminator if not already followed by newline.
+	// Insert "\n\n" after each Chinese terminator, skipping spaces and handling existing newlines.
 	var b strings.Builder
 	runes := []rune(s)
-	for i, r := range runes {
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		b.WriteRune(r)
 		if r == '。' || r == '！' || r == '？' {
-			if i+1 < len(runes) {
-				next := runes[i+1]
-				if next == '\n' || next == '\r' {
-					continue
-				}
+			// Look ahead, skip spaces
+			j := i + 1
+			for j < len(runes) && runes[j] == ' ' {
+				j++
 			}
-			b.WriteRune('\n')
+			if j >= len(runes) {
+				// End after spaces - add double newline (will be trimmed if at overall end)
+				b.WriteString("\n\n")
+				break
+			}
+			if runes[j] == '\n' {
+				// Count existing newlines
+				k := j
+				cnt := 0
+				for k < len(runes) && runes[k] == '\n' {
+					cnt++
+					k++
+				}
+				if cnt >= 2 {
+					// Already double newline, let next iterations write them
+					i = j - 1
+				} else {
+					// Single newline -> make it double
+					b.WriteRune('\n')
+					i = j - 1
+				}
+			} else {
+				// Next is not newline - skip spaces and add double newline
+				b.WriteString("\n\n")
+				i = j - 1
+			}
 		}
 	}
 	res := b.String()
-	res = strings.ReplaceAll(res, "。\n\n", "。\n")
-	res = strings.ReplaceAll(res, "！\n\n", "！\n")
-	res = strings.ReplaceAll(res, "？\n\n", "？\n")
+	// Normalize triple+ newlines to double
+	for strings.Contains(res, "\n\n\n") {
+		res = strings.ReplaceAll(res, "\n\n\n", "\n\n")
+	}
 	return res
 }
 
