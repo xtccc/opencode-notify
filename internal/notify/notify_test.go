@@ -119,7 +119,7 @@ func TestNotifyFromHookComplete(t *testing.T) {
 	if !strings.Contains(req.Message, "任务: OpenCode 完成") {
 		t.Errorf("message missing 任务: %q", req.Message)
 	}
-	if !strings.Contains(req.Message, "结果: hello world") {
+	if !strings.Contains(req.Message, "## 结果:") || !strings.Contains(req.Message, "hello world") {
 		t.Errorf("message missing 结果: %q", req.Message)
 	}
 	if !strings.Contains(req.Message, "完成于:") {
@@ -164,7 +164,7 @@ func TestNotifyHookQuestion(t *testing.T) {
 	if !strings.Contains(req.Message, "等待回答于:") {
 		t.Errorf("message = %q", req.Message)
 	}
-	if !strings.Contains(req.Message, "结果: 继续部署吗?") {
+	if !strings.Contains(req.Message, "## 结果:") || !strings.Contains(req.Message, "继续部署吗?") {
 		t.Errorf("message missing 结果: %q", req.Message)
 	}
 }

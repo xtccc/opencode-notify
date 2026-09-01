@@ -194,9 +194,9 @@ func buildMessage(kind hookcontext.Kind, durationMs *int64, sourceLabel, cwd, ta
 	}
 	if summary := format.TruncateSummary(outputText, 2000); summary != "" {
 		summary = format.SentenceBreakChinese(summary)
-		sb.WriteString("\n\n结果: " + summary)
+		sb.WriteString("\n\n## 结果:\n\n" + summary)
 	}
-	sb.WriteString("\n\n来源: " + sourceLabel)
+	sb.WriteString("\n\n## 来源: " + sourceLabel)
 	return sb.String()
 }
 
