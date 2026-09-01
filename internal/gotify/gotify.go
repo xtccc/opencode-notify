@@ -33,9 +33,10 @@ type Result struct {
 }
 
 type messagePayload struct {
-	Title    string `json:"title"`
-	Message  string `json:"message"`
-	Priority int    `json:"priority"`
+	Title    string         `json:"title"`
+	Message  string         `json:"message"`
+	Priority int            `json:"priority"`
+	Extras   map[string]any `json:"extras,omitempty"`
 }
 
 var (
@@ -65,7 +66,16 @@ func Send(ctx context.Context, cfg config.GotifyConfig, title, message string, k
 	case KindQuestion:
 		priority = cfg.Priority.Question
 	}
-	body, err := json.Marshal(messagePayload{Title: title, Message: message, Priority: priority})
+	body, err := json.Marshal(messagePayload{
+		Title:    title,
+		Message:  message,
+		Priority: priority,
+		Extras: map[string]any{
+			"client::display": map[string]any{
+				"contentType": "text/markdown",
+			},
+		},
+	})
 	if err != nil {
 		return Result{OK: false, Error: "payload marshal failed"}
 	}
