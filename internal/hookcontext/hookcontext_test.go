@@ -64,6 +64,42 @@ func TestBuild(t *testing.T) {
 			skip:    true,
 		},
 		{
+			name:     "execution succeeded is completion",
+			payload:  &HookPayload{HookSource: "opencode-plugin", HookEventName: "session.execution.succeeded", Cwd: "/s", OutputContent: "done"},
+			wantKind: KindComplete, wantTask: "OpenCode 完成",
+		},
+		{
+			name:     "execution failed is error",
+			payload:  &HookPayload{HookSource: "opencode-plugin", HookEventName: "session.execution.failed", Cwd: "/s", ErrorMessage: "upstream 500"},
+			wantKind: KindError, wantTask: "OpenCode 失败: upstream 500",
+		},
+		{
+			name:     "execution interrupted is completion",
+			payload:  &HookPayload{HookSource: "opencode-plugin", HookEventName: "session.execution.interrupted", Cwd: "/s"},
+			wantKind: KindComplete, wantTask: "OpenCode 完成",
+		},
+		{
+			name: "form created is question",
+			payload: &HookPayload{
+				HookSource: "opencode-plugin", HookEventName: "form.created", Cwd: "/s",
+				QuestionText: "选择分支", OutputContent: "选择分支",
+			},
+			wantKind: KindQuestion, wantTask: "OpenCode 需要你回答: 选择分支",
+		},
+		{
+			name: "permission asked is question",
+			payload: &HookPayload{
+				HookSource: "opencode-plugin", HookEventName: "permission.asked", Cwd: "/s",
+				QuestionText: "bash: rm -rf build", OutputContent: "bash: rm -rf build",
+			},
+			wantKind: KindQuestion, wantTask: "OpenCode 需要你回答: bash: rm -rf build",
+		},
+		{
+			name:    "unknown event skipped",
+			payload: &HookPayload{HookSource: "opencode-plugin", HookEventName: "session.started", Cwd: "/s"},
+			skip:    true,
+		},
+		{
 			name:    "missing event skipped",
 			payload: &HookPayload{HookSource: "opencode-plugin", Cwd: "/s"},
 			skip:    true,

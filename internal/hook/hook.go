@@ -1,4 +1,4 @@
-// Package hook manages the generated opencode plugin file:
+// Package hook manages the generated opencode plugin directory:
 // install (write), uninstall (remove by marker), status.
 package hook
 
@@ -12,7 +12,7 @@ import (
 	"opencode-notify/internal/plugin"
 )
 
-// Status describes the current plugin/installation state.
+// StatusInfo describes the current plugin/installation state.
 type StatusInfo struct {
 	Installed      bool   `json:"installed"`
 	PluginPath     string `json:"pluginPath"`
@@ -21,27 +21,64 @@ type StatusInfo struct {
 	Executable     string `json:"executable,omitempty"`
 }
 
-// Install renders the plugin with the given binary path and writes it to
-// the opencode plugins directory. Returns the written path.
+// Install renders the plugin directory (package.json + index.js) with the
+// given binary path and writes it under the opencode plugins directory.
+// Returns the directory path.
 func Install(exePath string) (string, error) {
-	js, err := plugin.Render(exePath)
+	index, err := plugin.Render(exePath)
 	if err != nil {
 		return "", err
 	}
-	path := config.OpenCodePluginPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	manifest, err := plugin.RenderManifest()
+	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(js), 0o644); err != nil {
+	dir := config.OpenCodePluginDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	return path, nil
+	if err := os.WriteFile(filepath.Join(dir, plugin.ManifestFileName), []byte(manifest), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, plugin.IndexFileName), []byte(index), 0o644); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
-// Uninstall removes the plugin file only when it carries our marker.
-// Returns whether a file was actually removed.
+// Uninstall removes the plugin directory only when its entrypoint carries our
+// marker. Returns whether files were actually removed. Legacy single-file
+// installs (plugins/opencode-notify.js) are cleaned up as well.
 func Uninstall() (bool, error) {
-	path := config.OpenCodePluginPath()
+	removed := false
+
+	if legacy := config.LegacyOpenCodePluginPath(); legacy != "" {
+		ok, err := removeOwnedFile(legacy)
+		if err != nil {
+			return removed, err
+		}
+		removed = removed || ok
+	}
+
+	dir := config.OpenCodePluginDir()
+	data, err := os.ReadFile(filepath.Join(dir, plugin.IndexFileName))
+	if errors.Is(err, os.ErrNotExist) {
+		return removed, nil
+	}
+	if err != nil {
+		return removed, err
+	}
+	if !strings.Contains(string(data), config.PluginMarker) {
+		return removed, nil
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return removed, err
+	}
+	return true, nil
+}
+
+// removeOwnedFile deletes a single file when it carries our marker.
+func removeOwnedFile(path string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -58,16 +95,24 @@ func Uninstall() (bool, error) {
 	return true, nil
 }
 
-// Status reports whether our plugin is present at the expected location.
+// Status reports whether our plugin directory is present at the expected
+// location. A legacy single-file install is reported as installed too.
 func Status() StatusInfo {
-	path := config.OpenCodePluginPath()
+	dir := config.OpenCodePluginDir()
 	installed := false
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := os.ReadFile(filepath.Join(dir, plugin.IndexFileName)); err == nil {
 		installed = strings.Contains(string(data), config.PluginMarker)
+	}
+	if !installed {
+		if legacy := config.LegacyOpenCodePluginPath(); legacy != "" {
+			if data, err := os.ReadFile(legacy); err == nil {
+				installed = strings.Contains(string(data), config.PluginMarker)
+			}
+		}
 	}
 	return StatusInfo{
 		Installed:      installed,
-		PluginPath:     path,
+		PluginPath:     dir,
 		OpencodeConfig: config.OpenCodeConfigDir(),
 		SettingsPath:   config.SettingsPath(),
 	}

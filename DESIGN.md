@@ -19,10 +19,14 @@
 
 ```
 opencode (Bun 运行时)
-└── ~/.config/opencode/plugins/opencode-notify.js   ← Go 生成/安装的插件
-        │  监听 session.idle / session.error / session.status(idle) / question.asked
-        │  1.5s 内去重（event::session_id::error）
-        │  Bun.spawn( 绝对路径/opencode-notify notify --source opencode --from-hook --force )
+└── ~/.config/opencode/plugins/opencode-notify/  ← Go 生成/安装的 OpenCode v2 插件目录
+        │  package.json + index.js（export default Plugin.define）
+        │  监听事件（v2 权威 + 旧事件兼容）：
+        │    session.execution.succeeded / failed / interrupted
+        │    form.created / permission.asked
+        │    session.idle / session.error / session.status(idle) / question.asked
+        │  1.5s 内按 session 合并去重（优先级 error>question>complete）
+        │  Bun.spawn( 绝对路径/opencode-notify notify --source opencode --from-hook )
         │  stdin ──────────────────▶ JSON payload（见 §6）
         ▼
   opencode-notify (Go 静态二进制)
@@ -34,6 +38,8 @@ opencode (Bun 运行时)
         └── 调用系统声音 CLI 播报            ← 通道 2：sound（§10）
         └── stdout 输出 JSON 结果
 ```
+
+> **v2 迁移背景**：OpenCode v2 的插件加载器只接受 `export default { id, effect|setup }`（`packages/core/src/plugin/module.ts`），旧 v1 的 `export const XxxPlugin = async () => ({ event })` 不再被识别；会话终态事件也从 `session.idle`/`session.error` 改为 `session.execution.succeeded/failed/interrupted`。因此插件改为 v2 Promise API 的**目录形态**。
 
 ## 3. 目录结构
 
@@ -50,8 +56,8 @@ opencode (Bun 运行时)
     ├── hook/
     │   └── hook.go              # install / uninstall / status（插件文件管理）
     ├── plugin/
-    │   ├── plugin.go            # go:embed 模板 → 渲染最终插件 JS
-    │   └── template.js          # 内嵌的 opencode 插件模板（embed）
+    │   ├── plugin.go            # go:embed 模板 → 渲染 index.js + package.json
+    │   └── template.js          # 内嵌的 OpenCode v2 插件模板（embed）
     ├── hookcontext/
     │   └── hookcontext.go       # 解析 stdin payload → 通知上下文
     ├── notify/
@@ -112,8 +118,8 @@ opencode (Bun 运行时)
 
 | 命令 | 说明 |
 |---|---|
-| `opencode-notify install` | 生成并写入 opencode 插件到 `~/.config/opencode/plugins/opencode-notify.js` |
-| `opencode-notify uninstall` | 按标记删除该插件文件 |
+| `opencode-notify install` | 生成并写入 OpenCode v2 插件目录 `~/.config/opencode/plugins/opencode-notify/` |
+| `opencode-notify uninstall` | 按标记删除该插件目录（并清理遗留的 v1 单文件） |
 | `opencode-notify status` | 插件安装状态 + 配置状态（JSON 输出） |
 | `opencode-notify notify --source opencode [--from-hook] [--force] [--task "..."] [--duration-ms N]` | 核心通知命令；`--from-hook` 时从 stdin 读 payload |
 | `opencode-notify test [--error] [--no-gotify] [--no-sound]` | 发一条测试通知：gotify + 声音（默认同时触发，flag 可单独关闭） |
@@ -123,29 +129,54 @@ opencode (Bun 运行时)
 
 所有命令 stdout 输出 **JSON**（`{ok, mode, result}`），便于被插件/脚本安全调用与解析；`--help` 输出人类可读用法。
 
-## 6. OpenCode 插件与事件契约
+## 6. OpenCode 插件与事件契约（v2）
 
-沿用「生成 JS 插件」机制（opencode 插件 API 为 JS/Bun 生态），但 spawn 的是 Go 二进制。
+沿用「生成 JS 插件」机制（opencode 插件 API 为 JS/Bun 生态），但改为 **OpenCode v2 Promise 插件目录**，spawn 的仍是 Go 二进制。
 
-**插件模板**（`plugin/template.js`，由 Go 渲染）：
-- 顶部标记 `// opencode-notify:plugin`（供 uninstall 识别）
+**插件目录**（`~/.config/opencode/plugins/opencode-notify/`，由 Go 生成）：
+
+```
+package.json   {"name":"opencode-notify","type":"module","exports":{".":"./index.js"}}
+index.js       导出 default Plugin.define({ id, setup })
+```
+
+- `index.js` 顶部标记 `// opencode-notify:plugin`（供 uninstall 识别）
+- **不 import `@opencode/plugin`**：本地插件目录无法解析该裸包名（加载器只做普通动态 `import()`），且其 `Plugin.define` 只是恒等函数 `(p) => p`；直接 `export default { id, setup }` 等价且零依赖
+- `export default { id: 'opencode-notify', async setup(ctx) {...} }`
+- `setup` 中 `ctx.event.subscribe({ signal })` 异步迭代事件流；`ctx.event` 即插件上下文的 `EventDomain`
+- `setup` 返回 cleanup：`abort()` 事件流并清空进程内簿记
 - 内嵌 `NOTIFY_CMD`：`["<opencode-notify绝对路径>", "notify", "--source", "opencode", "--from-hook"]`（不带 `--force`，让 Go 侧去重/阈值生效）；支持 `OPENCODE_NOTIFY_BIN` 环境变量覆盖二进制路径
-- 导出 `OpenCodeNotifyPlugin = async ({ client, project, directory, worktree }) => ({ event: ... })`
-- `isCompletionEvent`：`session.idle` / `session.error` / `session.status` 且 `status.type==='idle'` / `question.asked` / `question.v2.asked`
-- **按 session 合并去重**：同一 session 在 `COALESCE_MS`(1.5s) 窗口内的多个事件合并为一次通知，优先级 error>question>complete（跨类型互斥）；payload 在定时器到点时构建，避免文本抓取竞态
-- **payload 构建**：idle 时调用 `client.session.messages({path:{id}}) ` 尽力拉取最后一条 assistant 文本（失败降级为空，不影响通知）；error 直接取 `error_message`；question 事件取 `properties.questions[0].question`，`task_info = "OpenCode 需要你回答: <问题>"`
-- `Bun.spawn` 写入 stdin JSON，`stdout/stderr: 'ignore'`，不阻塞 opencode
+- **按 session 合并**：首个事件立即 `Bun.spawn`（不用 `setTimeout`，因为 `opencode run` 等非交互模式在计时器触发前就退出进程）；同 session 在 `COALESCE_MS`(1.5s) 内、优先级不更高的后续事件被抑制
+- **助手文本**：v2 插件上下文没有消息查询 API（`ctx.session` 无 `message.list`），因此改为从事件流累积——`session.text.ended` 带 `data.text`，按 `sessionID` 记录，`session.execution.started` 时清空
+
+**监听事件**（v2 权威事件优先，旧事件保留兼容）：
+
+| 事件 | kind | 数据位置 | 说明 |
+|---|---|---|---|
+| `session.execution.succeeded` | complete | `data.sessionID` | v2 会话成功终态 |
+| `session.execution.failed` | error | `data.error.message` | v2 会话失败终态 |
+| `session.execution.interrupted` | complete | `data.sessionID` | v2 会话被中断 |
+| `session.execution.started` | —（簿记） | `data.sessionID` | 清空该 session 累积的助手文本 |
+| `session.text.ended` | —（簿记） | `data.text` | 累积助手文本，供终态 payload 使用 |
+| `form.created` | question | `data.form.title` / `data.form.fields[].title` | v2 表单等待回答 |
+| `permission.asked` | question | `data.action` / `data.message` | v2 等待授权 |
+| `session.idle` / `session.status(type=idle)` | complete | — | 旧事件兼容 |
+| `session.error` | error | `properties.error.message` | 旧事件兼容 |
+| `question.asked` / `question.v2.asked` | question | `properties.questions[0].question` | 旧事件兼容 |
+
+事件封装：v2 为 `{ id, created, type, data }`，v1 为 `{ type, properties }`；插件用 `envelope(event)` 同时兼容两种取值。其余事件（如 `session.text.delta`）忽略。
 
 **stdin JSON 契约（payload）**：
 
 ```jsonc
 {
   "hook_source": "opencode-plugin",
-  "hook_event_name": "session.idle",     // session.idle | session.error | session.status | question.asked | question.v2.asked
+  "hook_event_name": "session.execution.succeeded", // 见上表
+  "kind": "complete",                                // complete | error | question
   "cwd": "/path/to/project",
   "task_info": "OpenCode 完成",
-  "session_id": "sess_xxx",
-  "project_name": "my-project",
+  "session_id": "ses_xxx",
+  "project_name": "proj_xxx",
   "error_message": "",
   "assistant_message": "最后一条助手回复...",
   "question_text": "需要你回答的问题文本（question 事件时）",
@@ -154,9 +185,9 @@ opencode (Bun 运行时)
 ```
 
 **Go 侧 hookcontext 解析规则**：
-- `hook_event_name == "session.error"` → `kind=error`，`task_info = "OpenCode 失败: <error_message 截断 88 字符>"`
-- `hook_event_name == "question.asked" / "question.v2.asked"` → `kind=question`，`task_info = "OpenCode 需要你回答[: <问题 截断 88 字符>]"`
-- `session.idle` / `session.status` → `kind=complete`，`task_info = "OpenCode 完成"`（`--task` 显式传入则优先）
+- `session.error` / `session.execution.failed` → `kind=error`，`task_info = "OpenCode 失败: <error_message>"`
+- `question.asked` / `question.v2.asked` / `form.created` / `permission.asked` → `kind=question`，`task_info = "OpenCode 需要你回答[: <问题>]"`
+- `session.idle` / `session.status` / `session.execution.succeeded` / `session.execution.interrupted` → `kind=complete`，`task_info = "OpenCode 完成"`（`--task` 显式传入则优先）
 - 其他/空 event → 跳过（`skipped`）
 
 ## 7. notify 流程
@@ -181,7 +212,7 @@ opencode (Bun 运行时)
 ## 9. 去重（internal/state，可选）
 
 - 状态文件：`~/.local/state/opencode-notify/state.json`（结构 `{recentNotifications:[{fingerprint,timestamp}]}`，截断 200 条）
-- 指纹：`source::cwd::normalized(task_info|output_content)[:240]`
+- 指纹：`source::scope::normalized(task_info|output_content)[:240]`；`scope` 优先取 `session:<session_id>`（OpenCode 会按 Location 多次激活插件、产生同 session 的重复事件），无 session 时退回 `cwd`
 - 窗口默认 5 分钟，`dedupe.enabled=false` 关闭
 
 ## 10. Sound 通道（internal/sound，Linux 原生）
@@ -210,7 +241,7 @@ opencode (Bun 运行时)
 - `hookcontext`：三类事件映射、error 截断、未知事件 skip（表驱动单测）
 - `gotify`：`httptest` server 验证请求头/路径/body、非 2xx、超时、脱敏
 - `sound`：`httptest` 假 Mimo 服务端 + fake exec，验证请求体/解码/临时文件/播放/清理、失败兜底
-- `plugin`：模板渲染包含 `NOTIFY_CMD` 与 marker；`hook` install/uninstall/status 集成测试（TMPDIR 隔离的 fake 配置目录）
+- `plugin`：模板渲染包含 `NOTIFY_CMD`、`Plugin.define`、v2 事件名与 marker；`RenderManifest` 是合法 package.json；`hook` install/uninstall/status 集成测试（TMPDIR 隔离的 fake 配置目录，含 v1 遗留文件清理）
 - `notify`：端到端（fake gotify server + 管道喂 stdin payload）验证 JSON 输出
 - 命令：`go test ./...`；`go vet ./...`
 
@@ -225,7 +256,8 @@ opencode (Bun 运行时)
 | 决策 | 选择 | 理由 |
 |---|---|---|
 | 语言/依赖 | Go 标准库零依赖 | 静态二进制、易分发 |
-| 集成方式 | 沿用 JS 插件 spawn Go 二进制 | opencode 插件 API 是 JS 生态 |
+| 集成方式 | 生成 OpenCode v2 Promise 插件目录，spawn Go 二进制 | opencode v2 插件 API 为 `export default {id, setup/effect}`；v1 shape 不再被加载 |
+| 事件来源 | v2 `session.execution.*` / `form.created` 为主，兼容旧事件 | v2 会话终态与等待输入的权威事件；保留旧事件避免旧路径漏报 |
 | 配置 | 新 JSON v1，独立命名空间 | 不污染/不复用旧格式 |
 | 平台 | Linux 优先 | Gotify 纯 HTTP + 声音 CLI 探测 |
 | 输出 | 全程 stdout JSON | 可被插件/脚本安全解析 |

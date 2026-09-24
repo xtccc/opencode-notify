@@ -96,13 +96,20 @@ func Run(ctx context.Context, opts Options) Outcome {
 		}
 	}
 
-	// Dedupe (optional, content fingerprint within a time window).
+	// Dedupe (optional, content fingerprint within a time window). OpenCode
+	// activates plugins once per Location, so the same terminal event can
+	// arrive several times with different cwd values; prefer the session ID as
+	// the scope so those collapse into one notification.
 	if cfg.Dedupe.Enabled && !opts.SkipDedupe && !opts.Force {
 		sig := decision.Signature
 		if strings.TrimSpace(sig) == "" {
 			sig = decision.TaskInfo
 		}
-		fp := state.MakeFingerprint(opts.Source, cwd, sig)
+		scope := cwd
+		if id := strings.TrimSpace(decision.SessionID); id != "" {
+			scope = "session:" + id
+		}
+		fp := state.MakeFingerprint(opts.Source, scope, sig)
 		dup, _ := state.CheckAndRemember(fp, cfg.Dedupe.WindowMinutes)
 		if dup {
 			return Outcome{

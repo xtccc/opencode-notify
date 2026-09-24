@@ -8,7 +8,7 @@ OpenCode 任务完成通知桥（Go 实现）。
 
 ## 特性
 
-- **监听 OpenCode 完成事件**：`session.idle` / `session.error` / `session.status(idle)` / `question.asked`（助手提问等待回答），通过生成 opencode 插件 JS（Bun 生态）实现
+- **监听 OpenCode 完成事件**：`session.execution.succeeded` / `session.execution.failed` / `session.execution.interrupted` / `form.created` / `permission.asked`（v2 权威事件），并兼容 `session.idle` / `session.error` / `session.status(idle)` / `question.asked`（旧事件），通过生成 OpenCode v2 插件目录（Bun 生态）实现
 - **Gotify 推送**：成功/失败不同优先级（默认 5 / 10），标题带项目名
 - **声音播报**：TTS 走小米 Mimo 云语音（`mimo-v2.5-tts`），合成的 WAV 由本地播放链（paplay/pw-play/aplay 等）播放，失败回退系统提示音
 - **去重**：内容指纹 + 时间窗（默认 5 分钟），避免重复推送
@@ -79,7 +79,9 @@ export OPENCODE_NOTIFY_STATE_DIR="/path/to/state"    # 自定义去重状态目�
 opencode-notify install
 ```
 
-将生成插件并写入 `~/.config/opencode/plugins/opencode-notify.js`，插件内已烧入 `opencode-notify` 二进制绝对路径。重启 opencode 后生效。
+将生成 OpenCode v2 插件目录并写入 `~/.config/opencode/plugins/opencode-notify/`（含 `package.json` 与 `index.js`），插件内已烧入 `opencode-notify` 二进制绝对路径。OpenCode 会在启动时自动发现并加载该目录。重启 opencode 后生效。
+
+> 从 v1 升级：v1 是单文件 `plugins/opencode-notify.js`，在新版 opencode 中不再被加载。重新执行 `opencode-notify install` 即可切换到 v2 目录形态；`uninstall` 也会顺带清理遗留的旧单文件。
 
 如需覆盖二进制路径（例如升级后二进制换位置，不想重装插件）：
 
@@ -118,11 +120,16 @@ opencode-notify help
 
 ```
 opencode (Bun 运行时)
-  └── ~/.config/opencode/plugins/opencode-notify.js  ← Go 生成/安装
-        │  监听 session.idle / session.error / session.status(idle) / question.asked
-        │  1.5s 窗口内事件去重
-        │  Bun.spawn( <二进制> notify --source opencode --from-hook --force )
-        │  stdin ─────▶ JSON payload {hook_event_name, cwd, task_info, ...}
+  └── ~/.config/opencode/plugins/opencode-notify/  ← Go 生成/安装（v2 插件目录）
+        │  index.js: export default { id, setup }
+        │  setup 中 ctx.event.subscribe() 监听事件：
+        │    session.execution.succeeded / failed / interrupted（v2 权威）
+        │    form.created / permission.asked（等待输入）
+        │    session.idle / session.error / session.status(idle) / question.asked（旧事件兼容）
+        │    助手文本从 session.text.ended 事件累积
+        │  首个事件立即 spawn；同 session 1.5s 内抑制重复（Go 侧再按 session 指纹去重）
+        │  Bun.spawn( <二进制> notify --source opencode --from-hook )
+        │  stdin ─────▶ JSON payload {hook_event_name, kind, cwd, task_info, session_id, ...}
         ▼
   opencode-notify (Go)
         ├── 读取 stdin JSON（1.5s 超时，非阻塞）
@@ -187,7 +194,7 @@ A: 确认 `appToken` 正确。app token 只能推送，不能用它读取消息 
 
 **Q: 插件已安装但不触发**
 
-A: 确认安装插件后**重启了 opencode**；确认 `status` 显示 `installed:true`；可用 `test` 命令验证通道本身正常。
+A: 确认安装插件后**重启了 opencode**；确认 `status` 显示 `installed:true`；`status` 的 `plugin` 字段应为插件目录 `.../plugins/opencode-notify`（v1 单文件 `opencode-notify.js` 在 OpenCode v2 中不再加载，重新 `install` 即可）。可用 `test` 命令验证通道本身正常。
 
 **Q: 声音没响**
 

@@ -18,13 +18,21 @@ const (
 	KindQuestion Kind = "question"
 )
 
-// Known event names emitted by the opencode plugin.
+// Known event names emitted by the opencode plugin. Events prefixed with
+// "session.execution." are the authoritative OpenCode v2 terminal events;
+// session.idle / session.error / session.status are the legacy equivalents
+// still emitted by older versions, kept for compatibility.
 const (
-	EventSessionIdle     = "session.idle"
-	EventSessionError    = "session.error"
-	EventSessionStatus   = "session.status"
-	EventQuestionAsked   = "question.asked"
-	EventQuestionV2Asked = "question.v2.asked"
+	EventSessionIdle      = "session.idle"
+	EventSessionError     = "session.error"
+	EventSessionStatus    = "session.status"
+	EventQuestionAsked    = "question.asked"
+	EventQuestionV2Asked  = "question.v2.asked"
+	EventExecutionSuccess = "session.execution.succeeded"
+	EventExecutionFailed  = "session.execution.failed"
+	EventExecutionAborted = "session.execution.interrupted"
+	EventFormCreated      = "form.created"
+	EventPermissionAsked  = "permission.asked"
 )
 
 // HookPayload is the JSON contract piped from the opencode plugin.
@@ -49,6 +57,7 @@ type Decision struct {
 	OutputText  string
 	Cwd         string
 	ProjectName string
+	SessionID   string
 	Signature   string // dedupe signature input
 	Skip        bool
 	SkipReason  string
@@ -110,7 +119,8 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 	}
 
 	output := firstNonEmpty(payload.OutputContent, payload.AssistantMessage, payload.ErrorMessage)
-	if eventName == EventSessionError {
+	sessionID := strings.TrimSpace(payload.SessionID)
+	if eventName == EventSessionError || eventName == EventExecutionFailed {
 		failure := strings.TrimSpace(firstNonEmpty(payload.ErrorMessage, output, "OpenCode task failed"))
 		return &Decision{
 			Kind:        KindError,
@@ -118,11 +128,13 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 			OutputText:  output,
 			Cwd:         payload.Cwd,
 			ProjectName: payload.ProjectName,
+			SessionID:   sessionID,
 			Signature:   output,
 		}, nil
 	}
 
-	if eventName == EventQuestionAsked || eventName == EventQuestionV2Asked {
+	if eventName == EventQuestionAsked || eventName == EventQuestionV2Asked || eventName == EventFormCreated ||
+		eventName == EventPermissionAsked {
 		question := strings.TrimSpace(firstNonEmpty(payload.QuestionText, output))
 		task := "OpenCode 需要你回答"
 		if question != "" {
@@ -134,11 +146,13 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 			OutputText:  firstNonEmpty(payload.QuestionText, output),
 			Cwd:         payload.Cwd,
 			ProjectName: payload.ProjectName,
+			SessionID:   sessionID,
 			Signature:   firstNonEmpty(payload.QuestionText, output),
 		}, nil
 	}
 
-	if eventName != EventSessionIdle && eventName != EventSessionStatus {
+	if eventName != EventSessionIdle && eventName != EventSessionStatus &&
+		eventName != EventExecutionSuccess && eventName != EventExecutionAborted {
 		return &Decision{Skip: true, SkipReason: "unsupported event: " + eventName}, nil
 	}
 
@@ -148,6 +162,7 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 		OutputText:  output,
 		Cwd:         payload.Cwd,
 		ProjectName: payload.ProjectName,
+		SessionID:   sessionID,
 		Signature:   output,
 	}, nil
 }

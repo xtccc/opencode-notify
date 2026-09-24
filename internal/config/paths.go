@@ -15,9 +15,13 @@ const SettingsFileName = "settings.json"
 // StateFileName is the dedupe state file name inside the state dir.
 const StateFileName = "state.json"
 
-// OpenCodePluginFileName is the plugin file name inside the opencode
-// plugins directory.
+// OpenCodePluginFileName is the legacy single-file plugin name inside the
+// opencode plugins directory (v1 layout).
 const OpenCodePluginFileName = "opencode-notify.js"
+
+// OpenCodePluginDirName is the plugin directory name inside the opencode
+// plugins directory (v2 layout).
+const OpenCodePluginDirName = "opencode-notify"
 
 // PluginMarker identifies plugin files we own so uninstall can remove
 // them safely.
@@ -89,9 +93,21 @@ func OpenCodeConfigDir() string {
 	return filepath.Join(homeDir(), ".config", "opencode")
 }
 
-// OpenCodePluginPath returns the full path to the plugin JS file.
-func OpenCodePluginPath() string {
-	return filepath.Join(OpenCodeConfigDir(), "plugins", OpenCodePluginFileName)
+// OpenCodePluginsDir returns the opencode plugins directory.
+func OpenCodePluginsDir() string {
+	return filepath.Join(OpenCodeConfigDir(), "plugins")
+}
+
+// OpenCodePluginDir returns the plugin directory installed for OpenCode v2
+// (plugins/opencode-notify/).
+func OpenCodePluginDir() string {
+	return filepath.Join(OpenCodePluginsDir(), OpenCodePluginDirName)
+}
+
+// LegacyOpenCodePluginPath returns the v1 single-file plugin path
+// (plugins/opencode-notify.js), kept for uninstall/status of old installs.
+func LegacyOpenCodePluginPath() string {
+	return filepath.Join(OpenCodePluginsDir(), OpenCodePluginFileName)
 }
 
 // EnsureConfigDir creates the settings directory if missing.

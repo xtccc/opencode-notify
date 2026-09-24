@@ -216,6 +216,32 @@ func TestNotifyDedupe(t *testing.T) {
 	rec := newGotifyRecorder(t)
 	writeConfig(t, rec.server.URL, true)
 
+	// Duplicate deliveries of the same session (OpenCode activates the plugin
+	// once per Location) must collapse into one notification.
+	payload := `{"hook_source":"opencode-plugin","hook_event_name":"session.idle","cwd":"/app","session_id":"s3","output_content":"same text"}`
+	payloadDup := `{"hook_source":"opencode-plugin","hook_event_name":"session.idle","cwd":"/other","session_id":"s3","output_content":"same text"}`
+
+	first := Run(context.Background(), Options{Source: "opencode", FromHook: true, Stdin: strings.NewReader(payload)})
+	if first.Skipped {
+		t.Fatalf("first should send: %+v", first)
+	}
+	second := Run(context.Background(), Options{Source: "opencode", FromHook: true, Stdin: strings.NewReader(payloadDup)})
+	if !second.Skipped {
+		t.Fatalf("duplicate of same session should be deduped: %+v", second)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.requests) != 1 {
+		t.Errorf("expected 1 gotify request after dedupe, got %d", len(rec.requests))
+	}
+}
+
+func TestNotifyDedupeDistinctSessions(t *testing.T) {
+	setupTestEnv(t)
+	rec := newGotifyRecorder(t)
+	writeConfig(t, rec.server.URL, true)
+
+	// Distinct sessions with identical text are genuinely distinct events.
 	payload := `{"hook_source":"opencode-plugin","hook_event_name":"session.idle","cwd":"/app","session_id":"s3","output_content":"same text"}`
 	payload2 := `{"hook_source":"opencode-plugin","hook_event_name":"session.idle","cwd":"/app","session_id":"s4","output_content":"same text"}`
 
@@ -224,13 +250,13 @@ func TestNotifyDedupe(t *testing.T) {
 		t.Fatalf("first should send: %+v", first)
 	}
 	second := Run(context.Background(), Options{Source: "opencode", FromHook: true, Stdin: strings.NewReader(payload2)})
-	if !second.Skipped {
-		t.Fatalf("second should be deduped: %+v", second)
+	if second.Skipped {
+		t.Fatalf("a different session should not be deduped: %+v", second)
 	}
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	if len(rec.requests) != 1 {
-		t.Errorf("expected 1 gotify request after dedupe, got %d", len(rec.requests))
+	if len(rec.requests) != 2 {
+		t.Errorf("expected 2 gotify requests for distinct sessions, got %d", len(rec.requests))
 	}
 }
 
