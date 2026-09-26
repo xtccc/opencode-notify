@@ -311,7 +311,102 @@ function truncateWords(text, maxWords) {
   return `${words.slice(0, maxWords).join(' ')}...`;
 }
 
-function buildPayload(event, ctx) {
+function baseName(path) {
+  if (typeof path !== 'string' || !path) return '';
+  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+// projectDisplayName prefers the human-readable project directory basename.
+// ctx.location.project.id is a hex hash, not a display name, so it is never
+// used here.
+function projectDisplayName(ctx) {
+  const location = (ctx && ctx.location) || {};
+  const project = location.project || {};
+  return firstString(
+    baseName(project.directory),
+    baseName(project.canonical),
+    baseName(location.directory),
+  );
+}
+
+// Best-effort session context lookup (title + owning directory) with a short
+// timeout. The lookup must never delay or break the immediate first-event
+// dispatch (non-interactive `opencode run` tears the process down fast), so
+// any failure or slowness falls back to empty strings. The directory matters
+// because only the elected leader subscribes: its ctx.location is the
+// leader's project, not necessarily the finished session's.
+const TITLE_FETCH_TIMEOUT_MS = 400;
+
+function extractSessionTitle(response) {
+  if (typeof response !== 'object' || response === null) return '';
+  const candidates = [
+    response.title,
+    response.name,
+    response.data && response.data.title,
+    response.session && response.session.title,
+    response.info && response.info.title,
+  ];
+  return firstString(...candidates);
+}
+
+function extractSessionDirectory(response) {
+  if (typeof response !== 'object' || response === null) return '';
+  const locations = [
+    response.location,
+    response.data && response.data.location,
+    response.session && response.session.location,
+    response.info && response.info.location,
+  ];
+  for (const location of locations) {
+    if (location && typeof location.directory === 'string' && location.directory.trim()) {
+      return location.directory.trim();
+    }
+  }
+  const directories = [
+    response.directory,
+    response.cwd,
+    response.data && (response.data.directory || response.data.cwd),
+  ];
+  return firstString(...directories);
+}
+
+async function fetchSessionContext(ctx, sessionId) {
+  const empty = { title: '', directory: '' };
+  if (!sessionId) return empty;
+  const getters = [];
+  if (ctx && ctx.session && typeof ctx.session.get === 'function') getters.push(ctx.session.get.bind(ctx.session));
+  if (ctx && ctx.client && ctx.client.session && typeof ctx.client.session.get === 'function') {
+    getters.push(ctx.client.session.get.bind(ctx.client.session));
+  }
+  if (!getters.length) return empty;
+  const shapes = [{ sessionID: sessionId }, { path: { id: sessionId } }, { id: sessionId }];
+  const lookup = (async () => {
+    for (const get of getters) {
+      for (const input of shapes) {
+        try {
+          const response = await get(input);
+          const title = extractSessionTitle(response);
+          const directory = extractSessionDirectory(response);
+          if (title || directory) return { title, directory };
+        } catch {
+          // try the next shape
+        }
+      }
+    }
+    return empty;
+  })();
+  try {
+    return await Promise.race([
+      lookup,
+      new Promise((resolve) => setTimeout(() => resolve(empty), TITLE_FETCH_TIMEOUT_MS)),
+    ]);
+  } catch {
+    return empty;
+  }
+}
+
+async function buildPayload(event, ctx) {
   const { type, data } = envelope(event);
   const sessionId = getSessionId(event);
   const errorMessage = getErrorMessage(event);
@@ -329,6 +424,7 @@ function buildPayload(event, ctx) {
   }
 
   const assistantText = questionText ? '' : takeAssistantText(sessionId);
+  const sessionCtx = questionText ? { title: '', directory: '' } : await fetchSessionContext(ctx, sessionId);
 
   let taskInfo;
   let outputContent;
@@ -355,24 +451,16 @@ function buildPayload(event, ctx) {
     hook_source: 'opencode-plugin',
     hook_event_name: type,
     kind,
-    cwd: sessionDirectory(ctx, data, event),
+    cwd: firstString(sessionCtx.directory, sessionDirectory(ctx, data, event)),
     task_info: taskInfo,
     session_id: sessionId,
-    project_name: firstString(treeString(ctx, 'location', 'project', 'id'), data && data.projectID, formTitle),
+    session_title: sessionCtx.title,
+    project_name: firstString(baseName(sessionCtx.directory), projectDisplayName(ctx)),
     error_message: errorMessage,
     assistant_message: assistantText,
     question_text: questionText,
     output_content: outputContent,
   };
-}
-
-function treeString(root, ...path) {
-  let value = root;
-  for (const key of path) {
-    if (!value || typeof value !== 'object') return '';
-    value = value[key];
-  }
-  return typeof value === 'string' ? value : '';
 }
 
 function dispatchPayload(payload) {

@@ -42,6 +42,7 @@ type HookPayload struct {
 	Cwd              string `json:"cwd"`
 	TaskInfo         string `json:"task_info"`
 	SessionID        string `json:"session_id"`
+	SessionTitle     string `json:"session_title"`
 	ProjectName      string `json:"project_name"`
 	ErrorMessage     string `json:"error_message"`
 	AssistantMessage string `json:"assistant_message"`
@@ -52,15 +53,16 @@ type HookPayload struct {
 // Decision is the result of parsing a payload: either a notification to
 // send or a skip.
 type Decision struct {
-	Kind        Kind
-	TaskInfo    string
-	OutputText  string
-	Cwd         string
-	ProjectName string
-	SessionID   string
-	Signature   string // dedupe signature input
-	Skip        bool
-	SkipReason  string
+	Kind         Kind
+	TaskInfo     string
+	OutputText   string
+	Cwd          string
+	ProjectName  string
+	SessionID    string
+	SessionTitle string
+	Signature    string // dedupe signature input
+	Skip         bool
+	SkipReason   string
 }
 
 // ReadStdinJSON reads a JSON object from r with a short timeout. It never
@@ -123,13 +125,14 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 	if eventName == EventSessionError || eventName == EventExecutionFailed {
 		failure := strings.TrimSpace(firstNonEmpty(payload.ErrorMessage, output, "OpenCode task failed"))
 		return &Decision{
-			Kind:        KindError,
-			TaskInfo:    explicitOrDefault(explicitTaskInfo, "OpenCode 失败: "+failure),
-			OutputText:  output,
-			Cwd:         payload.Cwd,
-			ProjectName: payload.ProjectName,
-			SessionID:   sessionID,
-			Signature:   output,
+			Kind:         KindError,
+			TaskInfo:     explicitOrDefault(explicitTaskInfo, "OpenCode 失败: "+failure),
+			OutputText:   output,
+			Cwd:          payload.Cwd,
+			ProjectName:  payload.ProjectName,
+			SessionID:    sessionID,
+			SessionTitle: strings.TrimSpace(payload.SessionTitle),
+			Signature:    output,
 		}, nil
 	}
 
@@ -141,13 +144,14 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 			task += ": " + question
 		}
 		return &Decision{
-			Kind:        KindQuestion,
-			TaskInfo:    explicitOrDefault(explicitTaskInfo, task),
-			OutputText:  firstNonEmpty(payload.QuestionText, output),
-			Cwd:         payload.Cwd,
-			ProjectName: payload.ProjectName,
-			SessionID:   sessionID,
-			Signature:   firstNonEmpty(payload.QuestionText, output),
+			Kind:         KindQuestion,
+			TaskInfo:     explicitOrDefault(explicitTaskInfo, task),
+			OutputText:   firstNonEmpty(payload.QuestionText, output),
+			Cwd:          payload.Cwd,
+			ProjectName:  payload.ProjectName,
+			SessionID:    sessionID,
+			SessionTitle: strings.TrimSpace(payload.SessionTitle),
+			Signature:    firstNonEmpty(payload.QuestionText, output),
 		}, nil
 	}
 
@@ -157,13 +161,14 @@ func Build(payload *HookPayload, explicitTaskInfo string) (*Decision, error) {
 	}
 
 	return &Decision{
-		Kind:        KindComplete,
-		TaskInfo:    explicitOrDefault(explicitTaskInfo, "OpenCode 完成"),
-		OutputText:  output,
-		Cwd:         payload.Cwd,
-		ProjectName: payload.ProjectName,
-		SessionID:   sessionID,
-		Signature:   output,
+		Kind:         KindComplete,
+		TaskInfo:     explicitOrDefault(explicitTaskInfo, "OpenCode 完成"),
+		OutputText:   output,
+		Cwd:          payload.Cwd,
+		ProjectName:  payload.ProjectName,
+		SessionID:    sessionID,
+		SessionTitle: strings.TrimSpace(payload.SessionTitle),
+		Signature:    output,
 	}, nil
 }
 

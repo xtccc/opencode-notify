@@ -149,6 +149,7 @@ index.js       导出 default Plugin.define({ id, setup })
 - **按 session 合并**：首个事件立即 `Bun.spawn`（不用 `setTimeout`，因为 `opencode run` 等非交互模式在计时器触发前就退出进程）；同 session 在 `COALESCE_MS`(1.5s) 内、优先级不更高的后续事件被抑制
 - **单 Leader 选举**：OpenCode 按 Location 为同一份插件各实例化一份，但事件流是 server 级的；`setup` 用 state 目录下 `plugin-leader.lock/` 原子 `mkdir` 抢锁，只有 leader 订阅事件流，其余实例 standby 并定时尝试接管（leader 心跳 5s、过期 15s，兼用 `kill(pid,0)` 识别死进程残留锁）
 - **助手文本**：v2 插件上下文没有消息查询 API（`ctx.session` 无 `message.list`），因此改为从事件流累积——`session.text.ended` 带 `data.text`，按 `sessionID` 记录，`session.execution.started` 时清空
+- **会话标题与归属**：`ctx.session.get` best-effort 获取 `title` + `location.directory`（400ms 超时降级）；`cwd`/`project_name` 优先用会话自身目录（只有 Leader 订阅，它的 `ctx.location` 不一定是完结会话的目录），`project.id` 是 hex 永不用作显示名
 
 **监听事件**（v2 权威事件优先，旧事件保留兼容）：
 
@@ -177,7 +178,8 @@ index.js       导出 default Plugin.define({ id, setup })
   "cwd": "/path/to/project",
   "task_info": "OpenCode 完成",
   "session_id": "ses_xxx",
-  "project_name": "proj_xxx",
+  "session_title": "修 flv 断流",              // best-effort 经 ctx.session.get 获取，失败/超时为空
+  "project_name": "opencode-notify",          // 项目目录 basename；v2 project.id 是 hex，不可用
   "error_message": "",
   "assistant_message": "最后一条助手回复...",
   "question_text": "需要你回答的问题文本（question 事件时）",
@@ -198,7 +200,7 @@ index.js       导出 default Plugin.define({ id, setup })
 3. 阈值过滤：`minDurationMinutes > 0` 且 `!force` 且耗时不足 → skipped
 4. 计算 `cwd`（payload.cwd 优先）、`projectName`（cwd 目录名）、`durationText`
 5. 可选去重：内容指纹（`source::cwd::task_info` 规范化）写入 `state.json`，时间窗内重复 → skipped
-6. 构建 Gotify 消息：title `[OpenCode] {project}: {task_info}`；body 字段 `完成于/出错于/等待回答于 + 时间 + 目录(完整 cwd) + 任务 + 耗时 + 结果(输出摘要，多行压单行 ≤200 rune) + 来源`
+6. 构建 Gotify 消息：title `[OpenCode] {project}: {task_info}`，有 `session_title` 时 title 改用 `[OpenCode] {project}: {session_title}`；body 字段 `完成于/出错于/等待回答于 + 时间 + 目录(完整 cwd) + 任务 + 耗时 + 结果(输出摘要，多行压单行 ≤200 rune) + 来源`
 6b. 若 `sound.enabled` → `internal/sound`（与 gotify 并行 `errgroup`），结果 `{channel:'sound', ...}` 并入 results
 7. stdout 输出 `{skipped:false, results:[{channel:'gotify',...},{channel:'sound',...}]}`
 

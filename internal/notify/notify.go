@@ -55,6 +55,7 @@ type Outcome struct {
 	Cwd      string          `json:"cwd,omitempty"`
 	Project  string          `json:"project,omitempty"`
 	TaskInfo string          `json:"taskInfo,omitempty"`
+	Session  string          `json:"sessionTitle,omitempty"`
 	Results  []ChannelResult `json:"results,omitempty"`
 }
 
@@ -121,7 +122,7 @@ func Run(ctx context.Context, opts Options) Outcome {
 	}
 
 	label := format.SourceLabel(opts.Source)
-	title := format.BuildTitle(project, decision.TaskInfo, label)
+	title := format.BuildSessionTitle(project, decision.SessionTitle, decision.TaskInfo, label)
 	message := buildMessage(decision.Kind, opts.DurationMs, label, cwd, decision.TaskInfo, decision.OutputText)
 
 	results := dispatch(ctx, cfg, opts, decision, title, message)
@@ -138,6 +139,7 @@ func Run(ctx context.Context, opts Options) Outcome {
 		Cwd:      cwd,
 		Project:  project,
 		TaskInfo: decision.TaskInfo,
+		Session:  decision.SessionTitle,
 		Results:  results,
 	}
 }

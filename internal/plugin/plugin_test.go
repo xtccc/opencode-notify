@@ -46,6 +46,25 @@ func TestRenderCoalescingPresent(t *testing.T) {
 	}
 }
 
+func TestRenderSessionTitlePresent(t *testing.T) {
+	out, err := Render("/usr/local/bin/opencode-notify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"session_title",
+		"fetchSessionContext",
+		"projectDisplayName",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("session title %q missing from template", want)
+		}
+	}
+	if strings.Contains(out, "location', 'project', 'id'") {
+		t.Error("template must not use hex project.id as project_name")
+	}
+}
+
 func TestRenderLeaderElectionPresent(t *testing.T) {
 	out, err := Render("/usr/local/bin/opencode-notify")
 	if err != nil {

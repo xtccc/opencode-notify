@@ -43,6 +43,19 @@ func BuildTitle(projectName, taskInfo, sourceLabel string) string {
 	return "[" + sourceLabel + "] " + projectName + ": " + taskInfo
 }
 
+// BuildSessionTitle composes the notification title when the session title
+// is known: "[OpenCode] project: session title", falling back to BuildTitle
+// when the session title is empty.
+func BuildSessionTitle(projectName, sessionTitle, taskInfo, sourceLabel string) string {
+	if strings.TrimSpace(sessionTitle) == "" {
+		return BuildTitle(projectName, taskInfo, sourceLabel)
+	}
+	if strings.TrimSpace(projectName) == "" {
+		return "[" + sourceLabel + "] " + strings.TrimSpace(sessionTitle)
+	}
+	return "[" + sourceLabel + "] " + strings.TrimSpace(projectName) + ": " + strings.TrimSpace(sessionTitle)
+}
+
 // TruncateSummary flattens a multi-line text into a single line and
 // truncates it to at most max runes. Empty input returns "".
 func TruncateSummary(text string, max int) string {

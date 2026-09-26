@@ -28,12 +28,18 @@ func TestFormatDurationMs(t *testing.T) {
 	}
 }
 
-func TestBuildTitle(t *testing.T) {
-	if got := BuildTitle("my-app", "OpenCode 完成", "OpenCode"); got != "[OpenCode] my-app: OpenCode 完成" {
-		t.Errorf("unexpected title: %q", got)
+func TestBuildSessionTitle(t *testing.T) {
+	if got := BuildSessionTitle("my-app", "修 flv 断流", "OpenCode 完成", "OpenCode"); got != "[OpenCode] my-app: 修 flv 断流" {
+		t.Errorf("unexpected session title: %q", got)
 	}
-	if got := BuildTitle("", "OpenCode 完成", "OpenCode"); got != "OpenCode 完成" {
-		t.Errorf("unexpected title without project: %q", got)
+	if got := BuildSessionTitle("", "修 flv 断流", "OpenCode 完成", "OpenCode"); got != "[OpenCode] 修 flv 断流" {
+		t.Errorf("unexpected session title without project: %q", got)
+	}
+	if got := BuildSessionTitle("my-app", "", "OpenCode 完成", "OpenCode"); got != "[OpenCode] my-app: OpenCode 完成" {
+		t.Errorf("empty session title must fall back to task title: %q", got)
+	}
+	if got := BuildSessionTitle("my-app", "  ", "OpenCode 完成", "OpenCode"); got != "[OpenCode] my-app: OpenCode 完成" {
+		t.Errorf("blank session title must fall back to task title: %q", got)
 	}
 }
 

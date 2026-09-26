@@ -153,16 +153,17 @@ func cmdNotify(rest []string) error {
 	out := notify.Run(ctx, opts)
 
 	payload := map[string]any{
-		"ok":       out.OK,
-		"skipped":  out.Skipped,
-		"reason":   out.Reason,
-		"mode":     "notify",
-		"source":   out.Source,
-		"kind":     out.Kind,
-		"cwd":      out.Cwd,
-		"project":  out.Project,
-		"taskInfo": out.TaskInfo,
-		"results":  out.Results,
+		"ok":           out.OK,
+		"skipped":      out.Skipped,
+		"reason":       out.Reason,
+		"mode":         "notify",
+		"source":       out.Source,
+		"kind":         out.Kind,
+		"cwd":          out.Cwd,
+		"project":      out.Project,
+		"taskInfo":     out.TaskInfo,
+		"sessionTitle": out.Session,
+		"results":      out.Results,
 	}
 	return emitJSON(payload)
 }

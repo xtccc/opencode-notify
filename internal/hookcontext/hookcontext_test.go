@@ -137,6 +137,27 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+func TestBuildSessionTitlePassthrough(t *testing.T) {
+	payload := &HookPayload{
+		HookSource: "opencode-plugin", HookEventName: "session.execution.succeeded",
+		Cwd: "/s", OutputContent: "done", SessionID: "ses_1", SessionTitle: " 修 flv 断流 ",
+		ProjectName: "my-app",
+	}
+	d, err := Build(payload, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Skip {
+		t.Fatal("must not skip")
+	}
+	if d.SessionTitle != "修 flv 断流" {
+		t.Errorf("SessionTitle = %q, want trimmed session title", d.SessionTitle)
+	}
+	if d.ProjectName != "my-app" {
+		t.Errorf("ProjectName = %q, want my-app", d.ProjectName)
+	}
+}
+
 func TestBuildErrorTruncation(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	d, _ := Build(&HookPayload{HookSource: "opencode-plugin", HookEventName: "session.error", ErrorMessage: long}, "")
