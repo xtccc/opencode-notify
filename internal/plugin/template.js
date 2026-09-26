@@ -16,6 +16,9 @@
 // import), and its `Plugin.define` is only the identity function
 // `(plugin) => plugin`. Exporting the plain `{ id, setup }` definition object
 // is the same thing with zero dependencies.
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+
 const NOTIFY_CMD_BASE = __NOTIFY_CMD_JSON__;
 const NOTIFY_CMD_ENV = typeof process !== 'undefined' ? process.env.OPENCODE_NOTIFY_BIN : undefined;
 const NOTIFY_CMD = NOTIFY_CMD_ENV ? [NOTIFY_CMD_ENV, ...NOTIFY_CMD_BASE.slice(1)] : NOTIFY_CMD_BASE;
@@ -25,6 +28,138 @@ const NOTIFY_CMD = NOTIFY_CMD_ENV ? [NOTIFY_CMD_ENV, ...NOTIFY_CMD_BASE.slice(1)
 // is collapsed into a single notification, preferring the most severe kind.
 const COALESCE_MS = 1500;
 const pendingBySession = new Map();
+
+// Single-leader election: OpenCode boots one plugin instance per Location in
+// the same server process, but completion events are server-wide. Without
+// coordination every instance would spawn its own notify process for the same
+// session (module-level maps are not shared across instances). Only the
+// leader subscribes to the event stream; the rest stand by and promote
+// themselves when the leader goes stale or its process dies.
+const LEADER_LOCK_DIRNAME = 'plugin-leader.lock';
+const LEADER_INFO_FILENAME = 'info.json';
+const LEADER_HEARTBEAT_MS = 5000;
+const LEADER_STALE_MS = 15000;
+
+function stateDirectory() {
+  const env = typeof process !== 'undefined' && process.env ? process.env : {};
+  const override = (env.OPENCODE_NOTIFY_STATE_DIR || '').trim();
+  if (override) return override;
+  const xdg = (env.XDG_STATE_HOME || '').trim();
+  if (xdg) return `${xdg.replace(/\/+$/, '')}/opencode-notify`;
+  let home = (env.HOME || '').trim();
+  if (!home) {
+    try {
+      home = homedir();
+    } catch {
+      home = '';
+    }
+  }
+  if (home) return `${home.replace(/\/+$/, '')}/.local/state/opencode-notify`;
+  return '';
+}
+
+function leaderPaths() {
+  const dir = stateDirectory();
+  if (!dir) return null;
+  const lockDir = `${dir}/${LEADER_LOCK_DIRNAME}`;
+  return { lockDir, infoPath: `${lockDir}/${LEADER_INFO_FILENAME}` };
+}
+
+function readLeaderInfo(infoPath) {
+  try {
+    return JSON.parse(readFileSync(infoPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function leaderIsAlive(pid) {
+  if (typeof pid !== 'number' || !Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // ESRCH = dead; EPERM = alive but not ours.
+    return Boolean(err && err.code === 'EPERM');
+  }
+}
+
+function writeLeaderInfo(infoPath, location) {
+  try {
+    writeFileSync(
+      infoPath,
+      JSON.stringify({ pid: process.pid, location, updatedAt: Date.now() }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+// tryAcquireLeader atomically claims leadership via mkdir (fails with EEXIST
+// when the lock dir already exists). An existing lock is stolen only when it
+// is stale (no heartbeat) or its owner process is dead, so a previous server
+// that exited without cleanup cannot wedge elections forever.
+function tryAcquireLeader(location) {
+  if (typeof process === 'undefined' || !process.pid) return true;
+  const paths = leaderPaths();
+  if (!paths) return true;
+  try {
+    mkdirSync(stateDirectory(), { recursive: true });
+  } catch {
+    return true;
+  }
+  try {
+    mkdirSync(paths.lockDir);
+    writeLeaderInfo(paths.infoPath, location);
+    return true;
+  } catch (err) {
+    if (!err || err.code !== 'EEXIST') return true;
+  }
+  const info = readLeaderInfo(paths.infoPath);
+  const fresh =
+    info &&
+    typeof info.updatedAt === 'number' &&
+    Date.now() - info.updatedAt < LEADER_STALE_MS;
+  if (fresh && (info.pid === process.pid || leaderIsAlive(info.pid))) return false;
+  try {
+    rmSync(paths.lockDir, { recursive: true, force: true });
+    mkdirSync(paths.lockDir);
+    writeLeaderInfo(paths.infoPath, location);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshLeaderHeartbeat(location) {
+  if (typeof process === 'undefined' || !process.pid) return;
+  const paths = leaderPaths();
+  if (!paths) return;
+  const info = readLeaderInfo(paths.infoPath);
+  if (!info || info.pid !== process.pid) return;
+  writeLeaderInfo(paths.infoPath, location);
+}
+
+function releaseLeader() {
+  if (typeof process === 'undefined' || !process.pid) return;
+  const paths = leaderPaths();
+  if (!paths) return;
+  const info = readLeaderInfo(paths.infoPath);
+  if (!info || info.pid !== process.pid) return;
+  try {
+    rmSync(paths.lockDir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+}
+
+function unrefTimer(timer) {
+  try {
+    if (timer && typeof timer.unref === 'function') timer.unref();
+  } catch {
+    // ignore
+  }
+}
 
 function firstString(...values) {
   for (const value of values) {
@@ -281,36 +416,68 @@ function queueCoalesced(sessionKey, event, ctx) {
   })();
 }
 
+async function runEventLoop(ctx, events, signal) {
+  try {
+    for await (const event of events.subscribe({ signal })) {
+      const { type, data } = envelope(event);
+      if (!type) continue;
+      const sessionId = getSessionId(event);
+      if (type === 'session.text.ended') {
+        recordAssistantText(sessionId, data.text);
+        continue;
+      }
+      if (type === 'session.execution.started') {
+        assistantTextBySession.delete(sessionId);
+        continue;
+      }
+      if (!isCompletionEvent(type, event) && !isSessionIdleStatus(type, event)) continue;
+      queueCoalesced(sessionId || 'global', event, ctx);
+    }
+  } catch (_error) {
+    // stream closed or plugin unloaded
+  }
+}
+
 export default {
   id: 'opencode-notify',
   async setup(ctx) {
     const events = ctx && ctx.event;
     if (!events || typeof events.subscribe !== 'function') return;
+    const location = firstString(ctx && ctx.location && ctx.location.directory);
     const controller = new AbortController();
-    void (async () => {
-      try {
-        for await (const event of events.subscribe({ signal: controller.signal })) {
-          const { type, data } = envelope(event);
-          if (!type) continue;
-          const sessionId = getSessionId(event);
-          if (type === 'session.text.ended') {
-            recordAssistantText(sessionId, data.text);
-            continue;
-          }
-          if (type === 'session.execution.started') {
-            assistantTextBySession.delete(sessionId);
-            continue;
-          }
-          if (!isCompletionEvent(type, event) && !isSessionIdleStatus(type, event)) continue;
-          queueCoalesced(sessionId || 'global', event, ctx);
-        }
-      } catch (_error) {
-        // stream closed or plugin unloaded
+    const state = { leader: false, watcher: null, heartbeat: null };
+    const activate = () => {
+      if (state.leader) return;
+      state.leader = true;
+      if (state.watcher) {
+        clearInterval(state.watcher);
+        state.watcher = null;
       }
-    })();
+      refreshLeaderHeartbeat(location);
+      state.heartbeat = setInterval(() => {
+        refreshLeaderHeartbeat(location);
+      }, LEADER_HEARTBEAT_MS);
+      unrefTimer(state.heartbeat);
+      void runEventLoop(ctx, events, controller.signal);
+    };
+    if (tryAcquireLeader(location)) {
+      activate();
+    } else {
+      // Stand by: another Location instance in this server is the leader.
+      // Promote ourselves if it goes stale or dies, so closing the leader's
+      // project does not silently stop notifications.
+      state.watcher = setInterval(() => {
+        if (tryAcquireLeader(location)) activate();
+      }, LEADER_HEARTBEAT_MS);
+      unrefTimer(state.watcher);
+    }
     // Cleanup: stop listening. Dispatched notifications are already in flight;
-    // in-process bookkeeping can be dropped.
+    // in-process bookkeeping can be dropped. Only the leader releases the
+    // lock, and only when it still owns it.
     return () => {
+      if (state.watcher) clearInterval(state.watcher);
+      if (state.heartbeat) clearInterval(state.heartbeat);
+      if (state.leader) releaseLeader();
       controller.abort();
       pendingBySession.clear();
       assistantTextBySession.clear();

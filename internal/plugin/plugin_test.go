@@ -46,6 +46,24 @@ func TestRenderCoalescingPresent(t *testing.T) {
 	}
 }
 
+func TestRenderLeaderElectionPresent(t *testing.T) {
+	out, err := Render("/usr/local/bin/opencode-notify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"plugin-leader.lock",
+		"tryAcquireLeader",
+		"refreshLeaderHeartbeat",
+		"releaseLeader",
+		"LEADER_STALE_MS",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("leader election %q missing from template", want)
+		}
+	}
+}
+
 func TestRenderV2PluginShape(t *testing.T) {
 	out, err := Render("/usr/local/bin/opencode-notify")
 	if err != nil {

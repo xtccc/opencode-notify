@@ -147,6 +147,7 @@ index.js       导出 default Plugin.define({ id, setup })
 - `setup` 返回 cleanup：`abort()` 事件流并清空进程内簿记
 - 内嵌 `NOTIFY_CMD`：`["<opencode-notify绝对路径>", "notify", "--source", "opencode", "--from-hook"]`（不带 `--force`，让 Go 侧去重/阈值生效）；支持 `OPENCODE_NOTIFY_BIN` 环境变量覆盖二进制路径
 - **按 session 合并**：首个事件立即 `Bun.spawn`（不用 `setTimeout`，因为 `opencode run` 等非交互模式在计时器触发前就退出进程）；同 session 在 `COALESCE_MS`(1.5s) 内、优先级不更高的后续事件被抑制
+- **单 Leader 选举**：OpenCode 按 Location 为同一份插件各实例化一份，但事件流是 server 级的；`setup` 用 state 目录下 `plugin-leader.lock/` 原子 `mkdir` 抢锁，只有 leader 订阅事件流，其余实例 standby 并定时尝试接管（leader 心跳 5s、过期 15s，兼用 `kill(pid,0)` 识别死进程残留锁）
 - **助手文本**：v2 插件上下文没有消息查询 API（`ctx.session` 无 `message.list`），因此改为从事件流累积——`session.text.ended` 带 `data.text`，按 `sessionID` 记录，`session.execution.started` 时清空
 
 **监听事件**（v2 权威事件优先，旧事件保留兼容）：
